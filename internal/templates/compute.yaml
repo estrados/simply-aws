@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda function with API Gateway
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: saws-api
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Role: !GetAtt LambdaRole.Arn
+      Code:
+        ZipFile: |
+          placeholder
+
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Ref FunctionName
+      ProtocolType: HTTP
+
+  Integration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt Function.Arn
+      PayloadFormatVersion: '2.0'
+
+Outputs:
+  ApiUrl:
+    Value: !GetAtt ApiGateway.ApiEndpoint
+  FunctionArn:
+    Value: !GetAtt Function.Arn
