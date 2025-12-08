@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,60 +12,123 @@ import (
 	"github.com/estrados/simply-aws/internal/awscli"
 	"github.com/estrados/simply-aws/internal/cfn"
 	"github.com/estrados/simply-aws/internal/project"
-	"github.com/estrados/simply-aws/internal/sync"
+	sawsSync "github.com/estrados/simply-aws/internal/sync"
 	"github.com/estrados/simply-aws/web"
 )
 
-var awsStatus awscli.Status
+var (
+	awsStatus awscli.Status
+	tmpl      *template.Template
+)
 
 func Start(addr string, status awscli.Status) error {
 	awsStatus = status
 
+	funcMap := template.FuncMap{
+		"not": func(b bool) bool { return !b },
+	}
+
+	var err error
+	tmpl, err = template.New("").Funcs(funcMap).ParseFS(web.Templates, "templates/*.html")
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/status", handleStatus)
-	mux.HandleFunc("/api/regions", handleRegions)
-	mux.HandleFunc("/api/regions/", handleRegionToggle)
-	mux.HandleFunc("/api/templates", handleTemplates)
-	mux.HandleFunc("/api/resources", handleResources)
-	mux.HandleFunc("/api/sync", handleSync)
-	mux.HandleFunc("/api/aws/", handleAWSCache)
+	// Static assets
+	staticFS, _ := fs.Sub(web.Static, ".")
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	mux.Handle("/", web.Handler())
+	// Pages
+	mux.HandleFunc("/", handleHome)
+	mux.HandleFunc("/settings", handleSettings)
+	mux.HandleFunc("/settings/regions/", handleRegionToggle)
+
+	// JSON APIs (kept for sync/templates)
+	mux.HandleFunc("/api/status", handleAPIStatus)
+	mux.HandleFunc("/api/templates", handleAPITemplates)
+	mux.HandleFunc("/api/resources", handleAPIResources)
+	mux.HandleFunc("/api/sync", handleAPISync)
+	mux.HandleFunc("/api/aws/", handleAPIAWSCache)
 
 	return http.ListenAndServe(addr, mux)
 }
 
-func handleStatus(w http.ResponseWriter, r *http.Request) {
-	lastSync, _ := sync.ReadLastSync()
-	resp := map[string]interface{}{
-		"aws":      awsStatus,
-		"lastSync": lastSync,
-	}
-	writeJSON(w, resp)
+type pageData struct {
+	CurrentRegion  string
+	EnabledRegions []string
+	Regions        []sawsSync.RegionInfo
 }
 
-func handleRegions(w http.ResponseWriter, r *http.Request) {
-	// If we have regions in DB, return them
-	regions, _ := sync.GetRegions()
+func newPageData() pageData {
+	enabled, _ := sawsSync.GetEnabledRegions()
+	return pageData{
+		CurrentRegion:  awsStatus.Region,
+		EnabledRegions: enabled,
+	}
+}
+
+func handleHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	ensureRegionsSeeded()
+	data := newPageData()
+	tmpl.ExecuteTemplate(w, "layout", data)
+}
+
+func handleSettings(w http.ResponseWriter, r *http.Request) {
+	ensureRegionsSeeded()
+	regions, _ := sawsSync.GetRegions()
+	data := newPageData()
+	data.Regions = regions
+	tmpl.ExecuteTemplate(w, "settings", data)
+}
+
+func handleRegionToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "use PUT", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/settings/regions/")
+	enabled := r.URL.Query().Get("enabled") == "true"
+
+	if name == "all" {
+		allRegions, _ := sawsSync.GetRegions()
+		for _, reg := range allRegions {
+			sawsSync.SetRegionEnabled(reg.Name, enabled)
+		}
+	} else {
+		sawsSync.SetRegionEnabled(name, enabled)
+	}
+
+	// Re-render the region list + update the dropdown via OOB swap
+	regions, _ := sawsSync.GetRegions()
+	tmpl.ExecuteTemplate(w, "region-list", regions)
+
+	// OOB swap for the dropdown
+	data := newPageData()
+	w.Write([]byte(`<div id="region-select-wrapper" hx-swap-oob="innerHTML">`))
+	tmpl.ExecuteTemplate(w, "region-dropdown", data)
+	w.Write([]byte(`</div>`))
+}
+
+func ensureRegionsSeeded() {
+	regions, _ := sawsSync.GetRegions()
 	if len(regions) > 0 {
-		writeJSON(w, regions)
 		return
 	}
-
-	// First time: fetch from AWS CLI and seed the DB
 	if !awsStatus.Installed {
-		writeJSON(w, []sync.RegionInfo{})
 		return
 	}
-
 	data, err := awscli.Run("ec2", "describe-regions", "--all-regions",
 		"--query", "Regions[?OptInStatus!='not-opted-in'].[RegionName]", "--output", "json")
 	if err != nil {
-		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	var nested [][]string
 	json.Unmarshal(data, &nested)
 	var names []string
@@ -72,52 +137,27 @@ func handleRegions(w http.ResponseWriter, r *http.Request) {
 			names = append(names, r[0])
 		}
 	}
-
-	sync.SetRegions(names)
-
-	regions, _ = sync.GetRegions()
-	writeJSON(w, regions)
+	sawsSync.SetRegions(names)
 }
 
-// PUT /api/regions/{name} with body {"enabled": true/false}
-func handleRegionToggle(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "use PUT", http.StatusMethodNotAllowed)
-		return
-	}
+// --- JSON API handlers (unchanged) ---
 
-	name := strings.TrimPrefix(r.URL.Path, "/api/regions/")
-	if name == "" {
-		http.Error(w, "missing region name", 400)
-		return
-	}
-
-	var body struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-
-	if err := sync.SetRegionEnabled(name, body.Enabled); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+func handleAPIStatus(w http.ResponseWriter, r *http.Request) {
+	lastSync, _ := sawsSync.ReadLastSync()
+	writeJSON(w, map[string]interface{}{
+		"aws":      awsStatus,
+		"lastSync": lastSync,
+	})
 }
 
-func handleTemplates(w http.ResponseWriter, r *http.Request) {
+func handleAPITemplates(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
-
 	cwd, _ := os.Getwd()
 	templates, err := project.ScanTemplates(cwd)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	if file != "" {
 		for _, t := range templates {
 			if t.File == file {
@@ -128,7 +168,6 @@ func handleTemplates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template not found", 404)
 		return
 	}
-
 	type summary struct {
 		File          string   `json:"file"`
 		Description   string   `json:"description,omitempty"`
@@ -137,25 +176,23 @@ func handleTemplates(w http.ResponseWriter, r *http.Request) {
 	}
 	var list []summary
 	for _, t := range templates {
-		types := resourceTypes(t)
 		list = append(list, summary{
 			File:          t.File,
 			Description:   t.Description,
 			ResourceCount: len(t.Resources),
-			ResourceTypes: types,
+			ResourceTypes: resourceTypes(t),
 		})
 	}
 	writeJSON(w, list)
 }
 
-func handleResources(w http.ResponseWriter, r *http.Request) {
+func handleAPIResources(w http.ResponseWriter, r *http.Request) {
 	cwd, _ := os.Getwd()
 	templates, err := project.ScanTemplates(cwd)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	type resource struct {
 		Name     string `json:"name"`
 		Type     string `json:"type"`
@@ -164,17 +201,13 @@ func handleResources(w http.ResponseWriter, r *http.Request) {
 	var all []resource
 	for _, t := range templates {
 		for name, res := range t.Resources {
-			all = append(all, resource{
-				Name:     name,
-				Type:     res.Type,
-				Template: t.File,
-			})
+			all = append(all, resource{Name: name, Type: res.Type, Template: t.File})
 		}
 	}
 	writeJSON(w, all)
 }
 
-func handleSync(w http.ResponseWriter, r *http.Request) {
+func handleAPISync(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
@@ -183,8 +216,7 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "AWS CLI not available", http.StatusServiceUnavailable)
 		return
 	}
-
-	results, err := sync.SyncAll()
+	results, err := sawsSync.SyncAll()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -192,10 +224,9 @@ func handleSync(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, results)
 }
 
-func handleAWSCache(w http.ResponseWriter, r *http.Request) {
+func handleAPIAWSCache(w http.ResponseWriter, r *http.Request) {
 	service := strings.TrimPrefix(r.URL.Path, "/api/aws/")
 	service = filepath.Clean(service)
-
 	if service == "" || service == "." {
 		validServices := []string{"vpc", "ec2", "ecs", "rds", "s3", "cloudformation"}
 		type serviceInfo struct {
@@ -204,16 +235,12 @@ func handleAWSCache(w http.ResponseWriter, r *http.Request) {
 		}
 		var list []serviceInfo
 		for _, s := range validServices {
-			list = append(list, serviceInfo{
-				Name:   s,
-				Cached: sync.CacheExists(s),
-			})
+			list = append(list, serviceInfo{Name: s, Cached: sawsSync.CacheExists(s)})
 		}
 		writeJSON(w, list)
 		return
 	}
-
-	data, err := sync.ReadCache(service)
+	data, err := sawsSync.ReadCache(service)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -222,7 +249,6 @@ func handleAWSCache(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, nil)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
 }

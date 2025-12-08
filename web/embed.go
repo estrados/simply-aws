@@ -1,15 +1,9 @@
 package web
 
-import (
-	"embed"
-	"io/fs"
-	"net/http"
-)
+import "embed"
 
-//go:embed index.html app.js styles.css
-var static embed.FS
+//go:embed styles.css
+var Static embed.FS
 
-func Handler() http.Handler {
-	sub, _ := fs.Sub(static, ".")
-	return http.FileServer(http.FS(sub))
-}
+//go:embed templates/*.html
+var Templates embed.FS

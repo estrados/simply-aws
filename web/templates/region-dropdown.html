@@ -1,0 +1,5 @@
+{{define "region-dropdown"}}<select id="region-select">
+  {{range .EnabledRegions}}<option value="{{.}}"{{if eq . $.CurrentRegion}} selected{{end}}>{{.}}</option>
+  {{else}}<option>No regions</option>
+  {{end}}
+</select>{{end}}
