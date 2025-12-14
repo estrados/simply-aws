@@ -25,7 +25,112 @@ func Start(addr string, status awscli.Status) error {
 	awsStatus = status
 
 	funcMap := template.FuncMap{
-		"not": func(b bool) bool { return !b },
+		"not":           func(b bool) bool { return !b },
+		"regionDisplay": awscli.RegionDisplayName,
+		"hasVPCData": func(v *sawsSync.VPCData) bool {
+			return v != nil && len(v.VPCs) > 0
+		},
+		"subnetsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.Subnet {
+			var out []sawsSync.Subnet
+			for _, s := range data.Subnets {
+				if s.VpcId == vpcId {
+					out = append(out, s)
+				}
+			}
+			return out
+		},
+		"igwsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.IGW {
+			var out []sawsSync.IGW
+			for _, g := range data.IGWs {
+				for _, id := range g.AttachedVpcIds {
+					if id == vpcId {
+						out = append(out, g)
+						break
+					}
+				}
+			}
+			return out
+		},
+		"natgwsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.NATGW {
+			var out []sawsSync.NATGW
+			for _, n := range data.NATGWs {
+				if n.VpcId == vpcId {
+					out = append(out, n)
+				}
+			}
+			return out
+		},
+		"hasIGWRoute": func(rt sawsSync.RouteTable) bool {
+			for _, r := range rt.Routes {
+				if strings.HasPrefix(r.GatewayId, "igw-") {
+					return true
+				}
+			}
+			return false
+		},
+		"rtAccess": func(rt sawsSync.RouteTable) string {
+			for _, r := range rt.Routes {
+				if strings.HasPrefix(r.GatewayId, "igw-") {
+					return "public"
+				}
+			}
+			for _, r := range rt.Routes {
+				if strings.HasPrefix(r.NatGatewayId, "nat-") {
+					return "egress-only"
+				}
+			}
+			return "isolated"
+		},
+		"sgsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.SecurityGroup {
+			var out []sawsSync.SecurityGroup
+			for _, sg := range data.SecurityGroups {
+				if sg.VpcId == vpcId {
+					out = append(out, sg)
+				}
+			}
+			return out
+		},
+		"routeTablesFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.RouteTable {
+			var out []sawsSync.RouteTable
+			for _, r := range data.RouteTables {
+				if r.VpcId == vpcId {
+					out = append(out, r)
+				}
+			}
+			return out
+		},
+		"subnetsForRT": func(rt sawsSync.RouteTable, vpcId string, data *sawsSync.VPCData) []sawsSync.Subnet {
+			if rt.IsMain {
+				// Main RT gets all subnets not explicitly associated to another RT
+				explicit := map[string]bool{}
+				for _, r := range data.RouteTables {
+					if r.VpcId == vpcId && !r.IsMain {
+						for _, sid := range r.SubnetIds {
+							explicit[sid] = true
+						}
+					}
+				}
+				var out []sawsSync.Subnet
+				for _, s := range data.Subnets {
+					if s.VpcId == vpcId && !explicit[s.SubnetId] {
+						out = append(out, s)
+					}
+				}
+				return out
+			}
+			// Non-main RT: return explicitly associated subnets
+			ids := map[string]bool{}
+			for _, sid := range rt.SubnetIds {
+				ids[sid] = true
+			}
+			var out []sawsSync.Subnet
+			for _, s := range data.Subnets {
+				if ids[s.SubnetId] {
+					out = append(out, s)
+				}
+			}
+			return out
+		},
 	}
 
 	var err error
@@ -42,8 +147,11 @@ func Start(addr string, status awscli.Status) error {
 
 	// Pages
 	mux.HandleFunc("/", handleHome)
-	mux.HandleFunc("/settings", handleSettings)
+	mux.HandleFunc("/settings/regions", handleRegionSettings)
 	mux.HandleFunc("/settings/regions/", handleRegionToggle)
+	mux.HandleFunc("/profile", handleProfile)
+	mux.HandleFunc("/vpc", handleVPC)
+	mux.HandleFunc("/sync/vpc", handleSyncVPC)
 
 	// JSON APIs (kept for sync/templates)
 	mux.HandleFunc("/api/status", handleAPIStatus)
@@ -59,6 +167,9 @@ type pageData struct {
 	CurrentRegion  string
 	EnabledRegions []string
 	Regions        []sawsSync.RegionInfo
+	AWS            awscli.Status
+	Region         string
+	VPC            *sawsSync.VPCData
 }
 
 func newPageData() pageData {
@@ -66,25 +177,91 @@ func newPageData() pageData {
 	return pageData{
 		CurrentRegion:  awsStatus.Region,
 		EnabledRegions: enabled,
+		AWS:            awsStatus,
 	}
 }
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+	path := strings.TrimPrefix(r.URL.Path, "/")
+
+	// Known routes — skip
+	for _, prefix := range []string{"static", "settings", "profile", "vpc", "sync", "api"} {
+		if strings.HasPrefix(path, prefix) {
+			http.NotFound(w, r)
+			return
+		}
 	}
+
 	ensureRegionsSeeded()
+
+	// / → redirect to /{default-region}
+	if path == "" {
+		region := awsStatus.Region
+		if region == "" {
+			enabled, _ := sawsSync.GetEnabledRegions()
+			if len(enabled) > 0 {
+				region = enabled[0]
+			}
+		}
+		if region != "" {
+			http.Redirect(w, r, "/"+region, http.StatusFound)
+			return
+		}
+	}
+
+	// /{region} → render page with that region
+	region := path
 	data := newPageData()
+	data.CurrentRegion = region
+	data.Region = region
+
+	vpcData, _ := sawsSync.LoadVPCData(region)
+	data.VPC = vpcData
+
 	tmpl.ExecuteTemplate(w, "layout", data)
 }
 
-func handleSettings(w http.ResponseWriter, r *http.Request) {
+func handleRegionSettings(w http.ResponseWriter, r *http.Request) {
 	ensureRegionsSeeded()
 	regions, _ := sawsSync.GetRegions()
 	data := newPageData()
 	data.Regions = regions
-	tmpl.ExecuteTemplate(w, "settings", data)
+	tmpl.ExecuteTemplate(w, "region-settings", data)
+}
+
+func handleProfile(w http.ResponseWriter, r *http.Request) {
+	data := newPageData()
+	tmpl.ExecuteTemplate(w, "profile", data)
+}
+
+func handleVPC(w http.ResponseWriter, r *http.Request) {
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	vpcData, _ := sawsSync.LoadVPCData(region)
+	data := newPageData()
+	data.Region = region
+	data.VPC = vpcData
+	tmpl.ExecuteTemplate(w, "vpc-panel", data)
+}
+
+func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	sawsSync.SyncVPCData(region)
+	vpcData, _ := sawsSync.LoadVPCData(region)
+	data := newPageData()
+	data.Region = region
+	data.VPC = vpcData
+	tmpl.ExecuteTemplate(w, "vpc-panel", data)
 }
 
 func handleRegionToggle(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,113 @@
+{{define "vpc-panel"}}
+<div id="vpc-content">
+  {{template "vpc-content" .}}
+</div>
+{{end}}
+
+{{define "vpc-content"}}
+{{if not (hasVPCData .VPC)}}
+  <div class="empty-state">No VPC data cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{$vpc := .VPC}}
+  {{range .VPC.VPCs}}
+  {{$vpcId := .VpcId}}
+  {{$igws := igwsFor .VpcId $vpc}}
+  {{$natgws := natgwsFor .VpcId $vpc}}
+  {{$rts := routeTablesFor .VpcId $vpc}}
+  {{$sgs := sgsFor .VpcId $vpc}}
+
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">{{if .Name}}{{.Name}}{{else}}{{.VpcId}}{{end}}</span>
+        {{if .IsDefault}}<span class="tag tag-default">default</span>{{end}}
+        <span class="tag tag-{{.State}}">{{.State}}</span>
+      </div>
+      <div class="vpc-meta">
+        <code>{{.VpcId}}</code>
+        <span class="vpc-cidr">{{.CidrBlock}}</span>
+      </div>
+    </div>
+
+    <div class="vpc-body">
+      {{if $igws}}
+      <div class="vpc-section">
+        <div class="vpc-section-label">Internet Gateways <span class="count-badge">{{len $igws}}</span></div>
+        {{range $igws}}
+        <div class="resource-row">
+          <span class="resource-icon">IGW</span>
+          <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.InternetGatewayId}}{{end}}</span>
+          <code class="resource-id">{{.InternetGatewayId}}</code>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if $natgws}}
+      <div class="vpc-section">
+        <div class="vpc-section-label">NAT Gateways <span class="count-badge">{{len $natgws}}</span></div>
+        {{range $natgws}}
+        <div class="resource-row">
+          <span class="resource-icon">NAT</span>
+          <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.NatGatewayId}}{{end}}</span>
+          <code class="resource-id">{{.NatGatewayId}}</code>
+          <span class="tag tag-{{.State}}">{{.State}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if $sgs}}
+      <div class="vpc-section">
+        <div class="vpc-section-label">Security Groups <span class="count-badge">{{len $sgs}}</span></div>
+        {{range $sgs}}
+        <div class="resource-row">
+          <span class="resource-icon">SG</span>
+          <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.GroupName}}{{end}}</span>
+          <span class="sg-rules">{{.InboundCount}} in / {{.OutboundCount}} out</span>
+          <code class="resource-id">{{.GroupId}}</code>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if $rts}}
+      {{range $rts}}
+      {{$access := rtAccess .}}
+      {{$rtSubnets := subnetsForRT . $vpcId $vpc}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header">
+          <span class="resource-icon">RT</span>
+          <span class="tag tag-{{$access}}">{{$access}}</span>
+          {{if .IsMain}}<span class="tag tag-main">main</span>{{end}}
+          <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.RouteTableId}}{{end}}</span>
+          <code class="resource-id">{{.RouteTableId}}</code>
+          <span class="resource-detail">{{len .Routes}} routes</span>
+        </div>
+
+        {{if $rtSubnets}}
+        <div class="rt-subnets">
+          <div class="subnet-grid">
+            {{range $rtSubnets}}
+            <div class="subnet-card">
+              <div class="subnet-name">{{if .Name}}{{.Name}}{{else}}{{.SubnetId}}{{end}}</div>
+              <div class="subnet-details">
+                <div><code>{{.CidrBlock}}</code></div>
+                <div class="subnet-meta">{{.AvailabilityZone}} · {{.AvailableIPs}} IPs free</div>
+              </div>
+              <code class="subnet-id">{{.SubnetId}}</code>
+            </div>
+            {{end}}
+          </div>
+        </div>
+        {{else}}
+        <div class="rt-no-subnets">No subnets associated</div>
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+{{end}}
+{{end}}

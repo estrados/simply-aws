@@ -12,13 +12,42 @@ type SyncResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// SyncAll fetches live AWS resources and caches them locally.
+// SyncVPCData fetches all VPC-related resources for a region and caches them.
+func SyncVPCData(region string) ([]SyncResult, error) {
+	jobs := []struct {
+		name      string
+		args      []string
+		countKey  string
+	}{
+		{"vpcs", []string{"ec2", "describe-vpcs", "--region", region}, "Vpcs"},
+		{"subnets", []string{"ec2", "describe-subnets", "--region", region}, "Subnets"},
+		{"igws", []string{"ec2", "describe-internet-gateways", "--region", region}, "InternetGateways"},
+		{"nat-gws", []string{"ec2", "describe-nat-gateways", "--region", region}, "NatGateways"},
+		{"route-tables", []string{"ec2", "describe-route-tables", "--region", region}, "RouteTables"},
+		{"security-groups", []string{"ec2", "describe-security-groups", "--region", region}, "SecurityGroups"},
+	}
+
+	var results []SyncResult
+	for _, job := range jobs {
+		key := region + ":" + job.name
+		data, err := awscli.Run(job.args...)
+		if err != nil {
+			results = append(results, SyncResult{Service: job.name, Error: err.Error()})
+			continue
+		}
+		WriteCache(key, data)
+		results = append(results, SyncResult{Service: job.name, Count: countKey(data, job.countKey)})
+	}
+
+	return results, nil
+}
+
+// SyncAll fetches common resources (not region-specific like S3).
 func SyncAll() ([]SyncResult, error) {
 	jobs := []struct {
 		name string
 		fn   func() (*SyncResult, error)
 	}{
-		{"vpc", syncVPCs},
 		{"ec2", syncEC2},
 		{"ecs", syncECS},
 		{"rds", syncRDS},
@@ -52,10 +81,6 @@ func syncService(name string, args []string, countField string) (*SyncResult, er
 		return nil, err
 	}
 	return &SyncResult{Service: name, Count: countKey(data, countField)}, nil
-}
-
-func syncVPCs() (*SyncResult, error) {
-	return syncService("vpc", []string{"ec2", "describe-vpcs"}, "Vpcs")
 }
 
 func syncEC2() (*SyncResult, error) {

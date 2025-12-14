@@ -11,12 +11,26 @@
   <header>
     <h1><span>saws</span></h1>
     <div id="header-right">
+      <button class="icon-btn" id="sync-btn"
+        hx-post="/sync/vpc" hx-target="#vpc-content" hx-swap="innerHTML"
+        hx-vals='{"region":"{{.CurrentRegion}}"}'
+        hx-indicator="#sync-btn"
+        title="Sync region">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2.5 11.5a10 10 0 0 1 18.4-4.5"/><path d="M21.5 12.5a10 10 0 0 1-18.4 4.5"/>
+        </svg>
+      </button>
       <div id="region-select-wrapper">
         {{template "region-dropdown" .}}
       </div>
-      <button class="icon-btn" hx-get="/settings" hx-target="#settings-container" hx-swap="innerHTML">
+      <button class="icon-btn" hx-get="/settings/regions" hx-target="#panel-container" hx-swap="innerHTML" title="Region settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          <circle cx="12" cy="2" r="2"/><path d="M12 8v13"/><path d="M5 3a2 2 0 1 0 0 4"/><path d="M5 7v13"/><path d="M19 3a2 2 0 1 1 0 4"/><path d="M19 7v13"/><path d="M2 21h20"/>
+        </svg>
+      </button>
+      <button class="icon-btn" hx-get="/profile" hx-target="#panel-container" hx-swap="innerHTML" title="AWS profile">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
         </svg>
       </button>
     </div>
@@ -24,6 +38,6 @@
   <main id="app">
     {{template "content" .}}
   </main>
-  <div id="settings-container"></div>
+  <div id="panel-container"></div>
 </body>
 </html>{{end}}

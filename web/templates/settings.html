@@ -1,11 +1,10 @@
-{{define "settings"}}<div class="settings-overlay" onclick="if(event.target===this)document.getElementById('settings-container').innerHTML=''">
+{{define "region-settings"}}<div class="settings-overlay" onclick="if(event.target===this)document.getElementById('panel-container').innerHTML=''">
   <div class="settings-panel">
     <div class="settings-header">
-      <h2>Settings</h2>
-      <button class="settings-close" onclick="document.getElementById('settings-container').innerHTML=''">&times;</button>
+      <h2>Regions</h2>
+      <button class="settings-close" onclick="document.getElementById('panel-container').innerHTML=''">&times;</button>
     </div>
     <div class="settings-body">
-      <h3>Regions</h3>
       <p class="settings-desc">Select which regions appear in the dropdown.</p>
       <div class="region-actions">
         <button class="btn btn-sm" hx-put="/settings/regions/all?enabled=true" hx-target="#region-list" hx-swap="innerHTML">Enable All</button>
@@ -23,5 +22,5 @@
     hx-put="/settings/regions/{{.Name}}?enabled={{not .Enabled}}"
     hx-target="#region-list"
     hx-swap="innerHTML">
-  <span>{{.Name}}</span>
+  <span>{{regionDisplay .Name}}</span>
 </label>{{end}}{{end}}
