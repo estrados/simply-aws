@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -152,6 +153,7 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/profile", handleProfile)
 	mux.HandleFunc("/vpc", handleVPC)
 	mux.HandleFunc("/sync/vpc", handleSyncVPC)
+	mux.HandleFunc("/detail/", handleDetail)
 
 	// JSON APIs (kept for sync/templates)
 	mux.HandleFunc("/api/status", handleAPIStatus)
@@ -169,6 +171,7 @@ type pageData struct {
 	Regions        []sawsSync.RegionInfo
 	AWS            awscli.Status
 	Region         string
+	Tab            string
 	VPC            *sawsSync.VPCData
 }
 
@@ -185,7 +188,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 
 	// Known routes — skip
-	for _, prefix := range []string{"static", "settings", "profile", "vpc", "sync", "api"} {
+	for _, prefix := range []string{"static", "settings", "profile", "vpc", "sync", "api", "detail"} {
 		if strings.HasPrefix(path, prefix) {
 			http.NotFound(w, r)
 			return
@@ -194,7 +197,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 
 	ensureRegionsSeeded()
 
-	// / → redirect to /{default-region}
+	// / → redirect to /{default-region}/net
 	if path == "" {
 		region := awsStatus.Region
 		if region == "" {
@@ -204,19 +207,40 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if region != "" {
-			http.Redirect(w, r, "/"+region, http.StatusFound)
+			http.Redirect(w, r, "/"+region+"/net", http.StatusFound)
 			return
 		}
 	}
 
-	// /{region} → render page with that region
-	region := path
+	// Parse /{region} or /{region}/{tab}
+	parts := strings.SplitN(path, "/", 2)
+	region := parts[0]
+	tab := "net"
+	if len(parts) == 2 && parts[1] != "" {
+		tab = parts[1]
+	}
+
+	// /{region} without tab → redirect to /{region}/net
+	if len(parts) == 1 || parts[1] == "" {
+		http.Redirect(w, r, "/"+region+"/net", http.StatusFound)
+		return
+	}
+
+	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true}
+	if !validTabs[tab] {
+		http.NotFound(w, r)
+		return
+	}
+
 	data := newPageData()
 	data.CurrentRegion = region
 	data.Region = region
+	data.Tab = tab
 
-	vpcData, _ := sawsSync.LoadVPCData(region)
-	data.VPC = vpcData
+	if tab == "net" {
+		vpcData, _ := sawsSync.LoadVPCData(region)
+		data.VPC = vpcData
+	}
 
 	tmpl.ExecuteTemplate(w, "layout", data)
 }
@@ -262,6 +286,303 @@ func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
 	data.Region = region
 	data.VPC = vpcData
 	tmpl.ExecuteTemplate(w, "vpc-panel", data)
+}
+
+type detailData struct {
+	Type          string
+	Title         string
+	Fields        []detailField
+	Rules         [][]string
+	RulesTitle    string
+	Outbound      [][]string
+	OutboundTitle string
+	Routes        [][]string
+}
+
+type detailField struct {
+	Label string
+	Value string
+}
+
+// GET /detail/{type}/{id}?region=xxx
+func handleDetail(w http.ResponseWriter, r *http.Request) {
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/detail/"), "/", 2)
+	if len(parts) != 2 {
+		http.Error(w, "bad path", 400)
+		return
+	}
+	resType, resId := parts[0], parts[1]
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+
+	vpcData, _ := sawsSync.LoadVPCData(region)
+	if vpcData == nil {
+		http.Error(w, "no data", 404)
+		return
+	}
+
+	var detail detailData
+
+	switch resType {
+	case "vpc":
+		for _, v := range vpcData.VPCs {
+			if v.VpcId == resId {
+				subnets := 0
+				for _, s := range vpcData.Subnets {
+					if s.VpcId == v.VpcId {
+						subnets++
+					}
+				}
+				sgs := 0
+				for _, sg := range vpcData.SecurityGroups {
+					if sg.VpcId == v.VpcId {
+						sgs++
+					}
+				}
+				detail = detailData{
+					Type:  "VPC",
+					Title: nameOr(v.Name, v.VpcId),
+					Fields: []detailField{
+						{"VPC ID", v.VpcId},
+						{"CIDR Block", v.CidrBlock},
+						{"State", v.State},
+						{"Default", boolStr(v.IsDefault)},
+						{"Subnets", fmt.Sprintf("%d", subnets)},
+						{"Security Groups", fmt.Sprintf("%d", sgs)},
+					},
+				}
+				break
+			}
+		}
+	case "subnet":
+		for _, s := range vpcData.Subnets {
+			if s.SubnetId == resId {
+				detail = detailData{
+					Type:  "SUBNET",
+					Title: nameOr(s.Name, s.SubnetId),
+					Fields: []detailField{
+						{"Subnet ID", s.SubnetId},
+						{"VPC ID", s.VpcId},
+						{"CIDR Block", s.CidrBlock},
+						{"Availability Zone", s.AvailabilityZone},
+						{"State", s.State},
+						{"Available IPs", fmt.Sprintf("%d", s.AvailableIPs)},
+					},
+				}
+				break
+			}
+		}
+	case "sg":
+		for _, sg := range vpcData.SecurityGroups {
+			if sg.GroupId == resId {
+				inbound, outbound := loadSGRules(region, resId)
+				detail = detailData{
+					Type:  "SG",
+					Title: nameOr(sg.Name, sg.GroupName),
+					Fields: []detailField{
+						{"Group ID", sg.GroupId},
+						{"Group Name", sg.GroupName},
+						{"VPC ID", sg.VpcId},
+						{"Description", sg.Description},
+						{"Inbound Rules", fmt.Sprintf("%d", sg.InboundCount)},
+						{"Outbound Rules", fmt.Sprintf("%d", sg.OutboundCount)},
+					},
+					RulesTitle:    "Inbound Rules",
+					Rules:         inbound,
+					OutboundTitle: "Outbound Rules",
+					Outbound:      outbound,
+				}
+				break
+			}
+		}
+	case "rt":
+		for _, rt := range vpcData.RouteTables {
+			if rt.RouteTableId == resId {
+				access := "isolated"
+				for _, route := range rt.Routes {
+					if strings.HasPrefix(route.GatewayId, "igw-") {
+						access = "public"
+						break
+					}
+					if strings.HasPrefix(route.NatGatewayId, "nat-") {
+						access = "egress-only"
+					}
+				}
+				detail = detailData{
+					Type:  "RT",
+					Title: nameOr(rt.Name, rt.RouteTableId),
+					Fields: []detailField{
+						{"Route Table ID", rt.RouteTableId},
+						{"VPC ID", rt.VpcId},
+						{"Access Level", access},
+						{"Main", boolStr(rt.IsMain)},
+						{"Associated Subnets", fmt.Sprintf("%d", len(rt.SubnetIds))},
+					},
+				}
+				for _, route := range rt.Routes {
+					target := route.GatewayId
+					if target == "" {
+						target = route.NatGatewayId
+					}
+					if target == "" {
+						target = "—"
+					}
+					detail.Routes = append(detail.Routes, []string{route.Destination, target, route.State})
+				}
+				break
+			}
+		}
+	case "igw":
+		for _, g := range vpcData.IGWs {
+			if g.InternetGatewayId == resId {
+				vpcs := strings.Join(g.AttachedVpcIds, ", ")
+				if vpcs == "" {
+					vpcs = "—"
+				}
+				detail = detailData{
+					Type:  "IGW",
+					Title: nameOr(g.Name, g.InternetGatewayId),
+					Fields: []detailField{
+						{"IGW ID", g.InternetGatewayId},
+						{"Attached VPCs", vpcs},
+					},
+				}
+				break
+			}
+		}
+	case "natgw":
+		for _, n := range vpcData.NATGWs {
+			if n.NatGatewayId == resId {
+				detail = detailData{
+					Type:  "NAT",
+					Title: nameOr(n.Name, n.NatGatewayId),
+					Fields: []detailField{
+						{"NAT Gateway ID", n.NatGatewayId},
+						{"VPC ID", n.VpcId},
+						{"Subnet ID", n.SubnetId},
+						{"State", n.State},
+					},
+				}
+				break
+			}
+		}
+	}
+
+	if detail.Type == "" {
+		http.Error(w, "not found", 404)
+		return
+	}
+
+	tmpl.ExecuteTemplate(w, "detail-panel", detail)
+}
+
+type sgPermission struct {
+	IpProtocol string `json:"IpProtocol"`
+	FromPort   *int   `json:"FromPort"`
+	ToPort     *int   `json:"ToPort"`
+	IpRanges   []struct {
+		CidrIp      string `json:"CidrIp"`
+		Description string `json:"Description"`
+	} `json:"IpRanges"`
+	Ipv6Ranges []struct {
+		CidrIpv6    string `json:"CidrIpv6"`
+		Description string `json:"Description"`
+	} `json:"Ipv6Ranges"`
+	UserIdGroupPairs []struct {
+		GroupId     string `json:"GroupId"`
+		Description string `json:"Description"`
+	} `json:"UserIdGroupPairs"`
+	PrefixListIds []struct {
+		PrefixListId string `json:"PrefixListId"`
+		Description  string `json:"Description"`
+	} `json:"PrefixListIds"`
+}
+
+func parseSGPerms(perms []sgPermission) [][]string {
+	var rules [][]string
+	for _, perm := range perms {
+		proto := perm.IpProtocol
+		if proto == "-1" {
+			proto = "All"
+		}
+		port := "All"
+		if perm.FromPort != nil {
+			if *perm.FromPort == *perm.ToPort {
+				port = fmt.Sprintf("%d", *perm.FromPort)
+			} else {
+				port = fmt.Sprintf("%d-%d", *perm.FromPort, *perm.ToPort)
+			}
+		}
+		for _, cidr := range perm.IpRanges {
+			desc := cidr.Description
+			if desc == "" {
+				desc = "—"
+			}
+			rules = append(rules, []string{proto, port, cidr.CidrIp, desc})
+		}
+		for _, cidr := range perm.Ipv6Ranges {
+			desc := cidr.Description
+			if desc == "" {
+				desc = "—"
+			}
+			rules = append(rules, []string{proto, port, cidr.CidrIpv6, desc})
+		}
+		for _, sg := range perm.UserIdGroupPairs {
+			desc := sg.Description
+			if desc == "" {
+				desc = "—"
+			}
+			rules = append(rules, []string{proto, port, sg.GroupId, desc})
+		}
+		for _, pl := range perm.PrefixListIds {
+			desc := pl.Description
+			if desc == "" {
+				desc = "—"
+			}
+			rules = append(rules, []string{proto, port, pl.PrefixListId, desc})
+		}
+	}
+	return rules
+}
+
+func loadSGRules(region, sgId string) (inbound, outbound [][]string) {
+	raw, err := sawsSync.ReadCache(region + ":security-groups")
+	if err != nil || raw == nil {
+		return nil, nil
+	}
+	var resp struct {
+		SecurityGroups []json.RawMessage `json:"SecurityGroups"`
+	}
+	json.Unmarshal(raw, &resp)
+	for _, sgRaw := range resp.SecurityGroups {
+		var sg struct {
+			GroupId             string         `json:"GroupId"`
+			IpPermissions       []sgPermission `json:"IpPermissions"`
+			IpPermissionsEgress []sgPermission `json:"IpPermissionsEgress"`
+		}
+		json.Unmarshal(sgRaw, &sg)
+		if sg.GroupId != sgId {
+			continue
+		}
+		return parseSGPerms(sg.IpPermissions), parseSGPerms(sg.IpPermissionsEgress)
+	}
+	return nil, nil
+}
+
+func nameOr(name, fallback string) string {
+	if name != "" {
+		return name
+	}
+	return fallback
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
 }
 
 func handleRegionToggle(w http.ResponseWriter, r *http.Request) {

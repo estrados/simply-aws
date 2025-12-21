@@ -1,3 +1,17 @@
 {{define "content"}}
-{{template "vpc-panel" .}}
+<div class="tab-bar">
+  <a class="tab{{if eq .Tab "net"}} active{{end}}" href="/{{.Region}}/net">Network</a>
+  <a class="tab{{if eq .Tab "compute"}} active{{end}}" href="/{{.Region}}/compute">Compute</a>
+  <a class="tab{{if eq .Tab "database"}} active{{end}}" href="/{{.Region}}/database">Database</a>
+  <a class="tab{{if eq .Tab "s3"}} active{{end}}" href="/{{.Region}}/s3">S3</a>
+</div>
+{{if eq .Tab "net"}}
+  {{template "vpc-panel" .}}
+{{else if eq .Tab "compute"}}
+  {{template "compute-panel" .}}
+{{else if eq .Tab "database"}}
+  {{template "database-panel" .}}
+{{else if eq .Tab "s3"}}
+  {{template "s3-panel" .}}
+{{end}}
 {{end}}

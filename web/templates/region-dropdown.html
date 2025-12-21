@@ -1,4 +1,4 @@
-{{define "region-dropdown"}}<select id="region-select" onchange="window.location.href='/'+this.value">
+{{define "region-dropdown"}}<select id="region-select" onchange="window.location.href='/'+this.value+'/{{$.Tab}}'">
   {{range .EnabledRegions}}<option value="{{.}}"{{if eq . $.CurrentRegion}} selected{{end}}>{{regionDisplay .}}</option>
   {{else}}<option>No regions</option>
   {{end}}

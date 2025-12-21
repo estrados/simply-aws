@@ -9,6 +9,7 @@
   <div class="empty-state">No VPC data cached. Click the refresh button to sync from AWS.</div>
 {{else}}
   {{$vpc := .VPC}}
+  {{$region := .Region}}
   {{range .VPC.VPCs}}
   {{$vpcId := .VpcId}}
   {{$igws := igwsFor .VpcId $vpc}}
@@ -17,7 +18,7 @@
   {{$sgs := sgsFor .VpcId $vpc}}
 
   <div class="vpc-card">
-    <div class="vpc-header">
+    <div class="vpc-header clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
       <div class="vpc-title">
         <span class="vpc-name">{{if .Name}}{{.Name}}{{else}}{{.VpcId}}{{end}}</span>
         {{if .IsDefault}}<span class="tag tag-default">default</span>{{end}}
@@ -34,7 +35,7 @@
       <div class="vpc-section">
         <div class="vpc-section-label">Internet Gateways <span class="count-badge">{{len $igws}}</span></div>
         {{range $igws}}
-        <div class="resource-row">
+        <div class="resource-row clickable" hx-get="/detail/igw/{{.InternetGatewayId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
           <span class="resource-icon">IGW</span>
           <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.InternetGatewayId}}{{end}}</span>
           <code class="resource-id">{{.InternetGatewayId}}</code>
@@ -47,7 +48,7 @@
       <div class="vpc-section">
         <div class="vpc-section-label">NAT Gateways <span class="count-badge">{{len $natgws}}</span></div>
         {{range $natgws}}
-        <div class="resource-row">
+        <div class="resource-row clickable" hx-get="/detail/natgw/{{.NatGatewayId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
           <span class="resource-icon">NAT</span>
           <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.NatGatewayId}}{{end}}</span>
           <code class="resource-id">{{.NatGatewayId}}</code>
@@ -61,7 +62,7 @@
       <div class="vpc-section">
         <div class="vpc-section-label">Security Groups <span class="count-badge">{{len $sgs}}</span></div>
         {{range $sgs}}
-        <div class="resource-row">
+        <div class="resource-row clickable" hx-get="/detail/sg/{{.GroupId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
           <span class="resource-icon">SG</span>
           <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.GroupName}}{{end}}</span>
           <span class="sg-rules">{{.InboundCount}} in / {{.OutboundCount}} out</span>
@@ -76,7 +77,7 @@
       {{$access := rtAccess .}}
       {{$rtSubnets := subnetsForRT . $vpcId $vpc}}
       <div class="vpc-section rt-section">
-        <div class="rt-header">
+        <div class="rt-header clickable" hx-get="/detail/rt/{{.RouteTableId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
           <span class="resource-icon">RT</span>
           <span class="tag tag-{{$access}}">{{$access}}</span>
           {{if .IsMain}}<span class="tag tag-main">main</span>{{end}}
@@ -89,7 +90,7 @@
         <div class="rt-subnets">
           <div class="subnet-grid">
             {{range $rtSubnets}}
-            <div class="subnet-card">
+            <div class="subnet-card clickable" hx-get="/detail/subnet/{{.SubnetId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
               <div class="subnet-name">{{if .Name}}{{.Name}}{{else}}{{.SubnetId}}{{end}}</div>
               <div class="subnet-details">
                 <div><code>{{.CidrBlock}}</code></div>

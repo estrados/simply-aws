@@ -1,0 +1,61 @@
+{{define "detail-panel"}}<div class="detail-overlay" onclick="if(event.target===this)document.getElementById('detail-container').innerHTML=''">
+  <div class="detail-sidebar">
+    <div class="detail-header">
+      <div>
+        <span class="resource-icon">{{.Type}}</span>
+        <span class="detail-title">{{.Title}}</span>
+      </div>
+      <button class="settings-close" onclick="document.getElementById('detail-container').innerHTML=''">&times;</button>
+    </div>
+    <div class="detail-body">
+      {{range .Fields}}
+      <div class="detail-row">
+        <span class="detail-label">{{.Label}}</span>
+        <span class="detail-value">{{.Value}}</span>
+      </div>
+      {{end}}
+
+      {{if .Rules}}
+      <div class="detail-rules-section">
+        <h4>{{.RulesTitle}}</h4>
+        {{range .Rules}}
+        <div class="detail-rule">
+          {{range .}}
+          <span class="detail-rule-item">{{.}}</span>
+          {{end}}
+        </div>
+        {{end}}
+        {{if not .Rules}}
+        <div class="detail-rule-empty">No rules</div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Outbound}}
+      <div class="detail-rules-section">
+        <h4>{{.OutboundTitle}}</h4>
+        {{range .Outbound}}
+        <div class="detail-rule">
+          {{range .}}
+          <span class="detail-rule-item">{{.}}</span>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Routes}}
+      <div class="detail-rules-section">
+        <h4>Routes</h4>
+        {{range .Routes}}
+        <div class="detail-rule">
+          {{range .}}
+          <span class="detail-rule-item">{{.}}</span>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>{{end}}
