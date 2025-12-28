@@ -31,6 +31,24 @@ func Start(addr string, status awscli.Status) error {
 		"hasVPCData": func(v *sawsSync.VPCData) bool {
 			return v != nil && len(v.VPCs) > 0
 		},
+		"hasS3Data": func(v *sawsSync.S3Data) bool {
+			return v != nil && len(v.Buckets) > 0
+		},
+		"hasDBData": func(v *sawsSync.DatabaseData) bool {
+			return v != nil && (len(v.RDS) > 0 || len(v.DynamoDB) > 0 || len(v.ElastiCache) > 0)
+		},
+		"formatBytes": func(b int64) string {
+			if b < 1024 {
+				return fmt.Sprintf("%d B", b)
+			}
+			if b < 1024*1024 {
+				return fmt.Sprintf("%.1f KB", float64(b)/1024)
+			}
+			if b < 1024*1024*1024 {
+				return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+			}
+			return fmt.Sprintf("%.1f GB", float64(b)/(1024*1024*1024))
+		},
 		"subnetsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.Subnet {
 			var out []sawsSync.Subnet
 			for _, s := range data.Subnets {
@@ -153,6 +171,8 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/profile", handleProfile)
 	mux.HandleFunc("/vpc", handleVPC)
 	mux.HandleFunc("/sync/vpc", handleSyncVPC)
+	mux.HandleFunc("/sync/s3", handleSyncS3)
+	mux.HandleFunc("/sync/database", handleSyncDatabase)
 	mux.HandleFunc("/detail/", handleDetail)
 
 	// JSON APIs (kept for sync/templates)
@@ -173,6 +193,8 @@ type pageData struct {
 	Region         string
 	Tab            string
 	VPC            *sawsSync.VPCData
+	S3             *sawsSync.S3Data
+	DB             *sawsSync.DatabaseData
 }
 
 func newPageData() pageData {
@@ -237,9 +259,16 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	data.Region = region
 	data.Tab = tab
 
-	if tab == "net" {
+	switch tab {
+	case "net":
 		vpcData, _ := sawsSync.LoadVPCData(region)
 		data.VPC = vpcData
+	case "database":
+		dbData, _ := sawsSync.LoadDatabaseData(region)
+		data.DB = dbData
+	case "s3":
+		s3Data, _ := sawsSync.LoadS3DataEnriched()
+		data.S3 = s3Data
 	}
 
 	tmpl.ExecuteTemplate(w, "layout", data)
@@ -286,6 +315,36 @@ func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
 	data.Region = region
 	data.VPC = vpcData
 	tmpl.ExecuteTemplate(w, "vpc-panel", data)
+}
+
+func handleSyncS3(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	sawsSync.SyncS3WithRegions()
+	s3Data, _ := sawsSync.LoadS3DataEnriched()
+	data := newPageData()
+	data.S3 = s3Data
+	tmpl.ExecuteTemplate(w, "s3-content", data)
+}
+
+func handleSyncDatabase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	sawsSync.SyncDatabaseData(region)
+	dbData, _ := sawsSync.LoadDatabaseData(region)
+	data := newPageData()
+	data.Region = region
+	data.DB = dbData
+	tmpl.ExecuteTemplate(w, "database-content", data)
 }
 
 type detailData struct {
@@ -468,6 +527,112 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	case "s3":
+		s3Data, _ := sawsSync.LoadS3DataEnriched()
+		if s3Data != nil {
+			for _, b := range s3Data.Buckets {
+				if b.Name == resId {
+					region := b.Region
+					if region == "" {
+						region = "—"
+					}
+					fields := []detailField{
+						{"Bucket Name", b.Name},
+						{"Region", region},
+						{"Access", b.Access},
+						{"Versioning", b.Versioning},
+						{"Created", b.CreationDate},
+						{"Policy Public", boolStr(b.PolicyPublic)},
+						{"ACL Public", boolStr(b.ACLPublic)},
+					}
+					if b.PublicAccessBlock != nil {
+						pab := b.PublicAccessBlock
+						fields = append(fields,
+							detailField{"Block Public ACLs", boolStr(pab.BlockPublicAcls)},
+							detailField{"Ignore Public ACLs", boolStr(pab.IgnorePublicAcls)},
+							detailField{"Block Public Policy", boolStr(pab.BlockPublicPolicy)},
+							detailField{"Restrict Public Buckets", boolStr(pab.RestrictPublicBuckets)},
+						)
+					}
+					detail = detailData{
+						Type:   "S3",
+						Title:  b.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "rds":
+		dbData, _ := sawsSync.LoadDatabaseData(r.URL.Query().Get("region"))
+		if dbData != nil {
+			for _, inst := range dbData.RDS {
+				if inst.DBInstanceId == resId {
+					endpoint := inst.Endpoint
+					if endpoint == "" {
+						endpoint = "—"
+					}
+					detail = detailData{
+						Type:  "RDS",
+						Title: inst.DBInstanceId,
+						Fields: []detailField{
+							{"Instance ID", inst.DBInstanceId},
+							{"Engine", inst.Engine + " " + inst.EngineVersion},
+							{"Instance Class", inst.InstanceClass},
+							{"Status", inst.Status},
+							{"Storage", fmt.Sprintf("%d GB %s", inst.AllocatedStorage, inst.StorageType)},
+							{"Multi-AZ", boolStr(inst.MultiAZ)},
+							{"Publicly Accessible", boolStr(inst.PubliclyAccessible)},
+							{"Endpoint", endpoint},
+							{"Port", fmt.Sprintf("%d", inst.Port)},
+							{"VPC ID", inst.VpcId},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "dynamodb":
+		dbData, _ := sawsSync.LoadDatabaseData(r.URL.Query().Get("region"))
+		if dbData != nil {
+			for _, t := range dbData.DynamoDB {
+				if t.TableName == resId {
+					detail = detailData{
+						Type:  "DDB",
+						Title: t.TableName,
+						Fields: []detailField{
+							{"Table Name", t.TableName},
+							{"Status", t.Status},
+							{"Item Count", fmt.Sprintf("%d", t.ItemCount)},
+							{"Size", formatBytes(t.SizeBytes)},
+							{"Billing Mode", t.BillingMode},
+							{"Table Class", t.TableClass},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "elasticache":
+		dbData, _ := sawsSync.LoadDatabaseData(r.URL.Query().Get("region"))
+		if dbData != nil {
+			for _, c := range dbData.ElastiCache {
+				if c.CacheClusterId == resId {
+					detail = detailData{
+						Type:  "CACHE",
+						Title: c.CacheClusterId,
+						Fields: []detailField{
+							{"Cluster ID", c.CacheClusterId},
+							{"Engine", c.Engine + " " + c.EngineVersion},
+							{"Node Type", c.CacheNodeType},
+							{"Nodes", fmt.Sprintf("%d", c.NumNodes)},
+							{"Status", c.Status},
+						},
+					}
+					break
+				}
+			}
+		}
 	}
 
 	if detail.Type == "" {
@@ -583,6 +748,19 @@ func boolStr(b bool) string {
 		return "Yes"
 	}
 	return "No"
+}
+
+func formatBytes(b int64) string {
+	if b < 1024 {
+		return fmt.Sprintf("%d B", b)
+	}
+	if b < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	}
+	if b < 1024*1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1f GB", float64(b)/(1024*1024*1024))
 }
 
 func handleRegionToggle(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,35 @@
 {{define "s3-panel"}}
 <div id="s3-content">
-  <div class="empty-state">S3 buckets coming soon.</div>
+  {{template "s3-content" .}}
 </div>
+{{end}}
+
+{{define "s3-content"}}
+{{if not (hasS3Data .S3)}}
+  <div class="empty-state">No S3 data cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">S3 Buckets</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .S3.Buckets}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      <div class="vpc-section">
+        {{range .S3.Buckets}}
+        <div class="resource-row clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">S3</span>
+          <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
+          <span class="resource-name">{{.Name}}</span>
+          {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
+          <span class="resource-detail">{{.CreationDate}}</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+{{end}}
 {{end}}

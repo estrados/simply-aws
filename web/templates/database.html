@@ -1,5 +1,92 @@
 {{define "database-panel"}}
 <div id="database-content">
-  <div class="empty-state">Database resources coming soon.</div>
+  {{template "database-content" .}}
 </div>
+{{end}}
+
+{{define "database-content"}}
+{{if not (hasDBData .DB)}}
+  <div class="empty-state">No database resources cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{if .DB.RDS}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">RDS Instances</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .DB.RDS}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      <div class="vpc-section">
+        {{range .DB.RDS}}
+        <div class="resource-row clickable" hx-get="/detail/rds/{{.DBInstanceId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">RDS</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          <span class="resource-name">{{.DBInstanceId}}</span>
+          <span class="resource-detail">{{.Engine}} {{.EngineVersion}}</span>
+          <span class="resource-detail">{{.InstanceClass}}</span>
+          {{if .PubliclyAccessible}}<span class="tag tag-public">public</span>{{end}}
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .DB.DynamoDB}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">DynamoDB Tables</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .DB.DynamoDB}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      <div class="vpc-section">
+        {{range .DB.DynamoDB}}
+        <div class="resource-row clickable" hx-get="/detail/dynamodb/{{.TableName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">DDB</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          <span class="resource-name">{{.TableName}}</span>
+          <span class="resource-detail">{{.ItemCount}} items</span>
+          <span class="resource-detail">{{formatBytes .SizeBytes}}</span>
+          <span class="resource-detail">{{.BillingMode}}</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .DB.ElastiCache}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">ElastiCache Clusters</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .DB.ElastiCache}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      <div class="vpc-section">
+        {{range .DB.ElastiCache}}
+        <div class="resource-row clickable" hx-get="/detail/elasticache/{{.CacheClusterId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">CACHE</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          <span class="resource-name">{{.CacheClusterId}}</span>
+          <span class="resource-detail">{{.Engine}} {{.EngineVersion}}</span>
+          <span class="resource-detail">{{.CacheNodeType}}</span>
+          <span class="resource-detail">{{.NumNodes}} nodes</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+{{end}}
 {{end}}

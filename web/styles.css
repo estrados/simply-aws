@@ -117,6 +117,12 @@ main {
   border-bottom-color: var(--accent);
 }
 
+.tab-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+
 .btn {
   background: var(--accent);
   color: white;
@@ -462,6 +468,9 @@ code {
 .tag-egress-only { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
 .tag-isolated { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
 .tag-main { background: rgba(52, 152, 219, 0.15); color: #3498db; }
+.tag-s3-private { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.tag-s3-public { background: rgba(231, 76, 60, 0.15); color: var(--red); }
+.tag-s3-unknown { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
 
 .sg-rules {
   font-size: 11px;

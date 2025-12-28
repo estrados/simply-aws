@@ -3,7 +3,14 @@
   <a class="tab{{if eq .Tab "net"}} active{{end}}" href="/{{.Region}}/net">Network</a>
   <a class="tab{{if eq .Tab "compute"}} active{{end}}" href="/{{.Region}}/compute">Compute</a>
   <a class="tab{{if eq .Tab "database"}} active{{end}}" href="/{{.Region}}/database">Database</a>
-  <a class="tab{{if eq .Tab "s3"}} active{{end}}" href="/{{.Region}}/s3">S3</a>
+  <a class="tab{{if eq .Tab "s3"}} active{{end}}" href="/{{.Region}}/s3">S3 & Data</a>
+</div>
+<div class="tab-desc">
+  {{if eq .Tab "net"}}VPCs, subnets, security groups, internet gateways, NAT gateways, and route tables.
+  {{else if eq .Tab "compute"}}EC2 instances, ECS clusters, Lambda functions, and other compute resources.
+  {{else if eq .Tab "database"}}RDS instances, DynamoDB tables, and ElastiCache clusters.
+  {{else if eq .Tab "s3"}}S3 buckets, Redshift clusters, Athena workgroups, and Glue databases.
+  {{end}}
 </div>
 {{if eq .Tab "net"}}
   {{template "vpc-panel" .}}
