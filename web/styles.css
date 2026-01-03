@@ -468,6 +468,9 @@ code {
 .tag-egress-only { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
 .tag-isolated { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
 .tag-main { background: rgba(52, 152, 219, 0.15); color: #3498db; }
+.tag-ENABLED, .tag-enabled { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.tag-DISABLED, .tag-disabled { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
+.tag-ACTIVE, .tag-active-status { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 .tag-s3-private { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 .tag-s3-public { background: rgba(231, 76, 60, 0.15); color: var(--red); }
 .tag-s3-unknown { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
@@ -495,6 +498,23 @@ code {
   padding: 0 0 14px 28px;
   border-left: 2px solid var(--border);
   margin-left: 16px;
+}
+
+.nested-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding: 8px 0 2px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.nested-section-label:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 4px;
 }
 
 .rt-no-subnets {

@@ -4,12 +4,14 @@
   <a class="tab{{if eq .Tab "compute"}} active{{end}}" href="/{{.Region}}/compute">Compute</a>
   <a class="tab{{if eq .Tab "database"}} active{{end}}" href="/{{.Region}}/database">Database</a>
   <a class="tab{{if eq .Tab "s3"}} active{{end}}" href="/{{.Region}}/s3">S3 & Data</a>
+  <a class="tab{{if eq .Tab "streaming"}} active{{end}}" href="/{{.Region}}/streaming">Queues & Streaming</a>
 </div>
 <div class="tab-desc">
   {{if eq .Tab "net"}}VPCs, subnets, security groups, internet gateways, NAT gateways, and route tables.
   {{else if eq .Tab "compute"}}EC2 instances, ECS clusters, Lambda functions, and other compute resources.
   {{else if eq .Tab "database"}}RDS instances, DynamoDB tables, and ElastiCache clusters.
   {{else if eq .Tab "s3"}}S3 buckets, Redshift clusters, Athena workgroups, and Glue databases.
+  {{else if eq .Tab "streaming"}}SQS queues, SNS topics, Kinesis streams, EventBridge buses, and MSK clusters.
   {{end}}
 </div>
 {{if eq .Tab "net"}}
@@ -20,5 +22,7 @@
   {{template "database-panel" .}}
 {{else if eq .Tab "s3"}}
   {{template "s3-panel" .}}
+{{else if eq .Tab "streaming"}}
+  {{template "streaming-panel" .}}
 {{end}}
 {{end}}

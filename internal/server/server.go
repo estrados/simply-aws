@@ -34,6 +34,9 @@ func Start(addr string, status awscli.Status) error {
 		"hasS3Data": func(v *sawsSync.S3Data) bool {
 			return v != nil && len(v.Buckets) > 0
 		},
+		"hasDWData": func(v *sawsSync.DataWarehouseData) bool {
+			return v != nil && (len(v.Redshift) > 0 || len(v.Athena) > 0 || len(v.Glue) > 0)
+		},
 		"hasDBData": func(v *sawsSync.DatabaseData) bool {
 			return v != nil && (len(v.RDS) > 0 || len(v.DynamoDB) > 0 || len(v.ElastiCache) > 0)
 		},
@@ -194,6 +197,7 @@ type pageData struct {
 	Tab            string
 	VPC            *sawsSync.VPCData
 	S3             *sawsSync.S3Data
+	DW             *sawsSync.DataWarehouseData
 	DB             *sawsSync.DatabaseData
 }
 
@@ -248,7 +252,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true}
+	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true, "streaming": true}
 	if !validTabs[tab] {
 		http.NotFound(w, r)
 		return
@@ -269,6 +273,8 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	case "s3":
 		s3Data, _ := sawsSync.LoadS3DataEnriched()
 		data.S3 = s3Data
+		dwData, _ := sawsSync.LoadDataWarehouseData(region)
+		data.DW = dwData
 	}
 
 	tmpl.ExecuteTemplate(w, "layout", data)
@@ -322,10 +328,19 @@ func handleSyncS3(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
 	sawsSync.SyncS3WithRegions()
+	sawsSync.SyncDataWarehouseData(region)
 	s3Data, _ := sawsSync.LoadS3DataEnriched()
+	dwData, _ := sawsSync.LoadDataWarehouseData(region)
 	data := newPageData()
+	data.Region = region
 	data.S3 = s3Data
+	data.DW = dwData
 	tmpl.ExecuteTemplate(w, "s3-content", data)
 }
 
@@ -627,6 +642,105 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 							{"Node Type", c.CacheNodeType},
 							{"Nodes", fmt.Sprintf("%d", c.NumNodes)},
 							{"Status", c.Status},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "redshift":
+		dwData, _ := sawsSync.LoadDataWarehouseData(r.URL.Query().Get("region"))
+		if dwData != nil {
+			for _, c := range dwData.Redshift {
+				if c.ClusterIdentifier == resId {
+					endpoint := c.Endpoint
+					if endpoint == "" {
+						endpoint = "—"
+					}
+					vpcId := c.VpcId
+					if vpcId == "" {
+						vpcId = "—"
+					}
+					subnetGroup := c.SubnetGroupName
+					if subnetGroup == "" {
+						subnetGroup = "—"
+					}
+					var sgList []string
+					for _, sg := range c.SecurityGroups {
+						sgList = append(sgList, sg.GroupId)
+					}
+					sgs := "—"
+					if len(sgList) > 0 {
+						sgs = strings.Join(sgList, ", ")
+					}
+					detail = detailData{
+						Type:  "RS",
+						Title: c.ClusterIdentifier,
+						Fields: []detailField{
+							{"Cluster ID", c.ClusterIdentifier},
+							{"Node Type", c.NodeType},
+							{"Nodes", fmt.Sprintf("%d", c.NumberOfNodes)},
+							{"Status", c.Status},
+							{"Database", c.DBName},
+							{"Endpoint", endpoint},
+							{"Port", fmt.Sprintf("%d", c.Port)},
+							{"Encrypted", boolStr(c.Encrypted)},
+							{"Publicly Accessible", boolStr(c.PubliclyAccessible)},
+							{"VPC ID", vpcId},
+							{"Subnet Group", subnetGroup},
+							{"Security Groups", sgs},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "athena":
+		dwData, _ := sawsSync.LoadDataWarehouseData(r.URL.Query().Get("region"))
+		if dwData != nil {
+			for _, wg := range dwData.Athena {
+				if wg.Name == resId {
+					desc := wg.Description
+					if desc == "" {
+						desc = "—"
+					}
+					detail = detailData{
+						Type:  "ATH",
+						Title: wg.Name,
+						Fields: []detailField{
+							{"Workgroup", wg.Name},
+							{"State", wg.State},
+							{"Engine", wg.EngineVersion},
+							{"Description", desc},
+							{"Created", wg.CreationTime},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "glue":
+		dwData, _ := sawsSync.LoadDataWarehouseData(r.URL.Query().Get("region"))
+		if dwData != nil {
+			for _, db := range dwData.Glue {
+				if db.Name == resId {
+					desc := db.Description
+					if desc == "" {
+						desc = "—"
+					}
+					loc := db.LocationUri
+					if loc == "" {
+						loc = "—"
+					}
+					detail = detailData{
+						Type:  "GLUE",
+						Title: db.Name,
+						Fields: []detailField{
+							{"Database", db.Name},
+							{"Description", desc},
+							{"Location URI", loc},
+							{"Catalog ID", db.CatalogId},
+							{"Created", db.CreateTime},
 						},
 					}
 					break

@@ -5,31 +5,138 @@
 {{end}}
 
 {{define "s3-content"}}
-{{if not (hasS3Data .S3)}}
-  <div class="empty-state">No S3 data cached. Click the refresh button to sync from AWS.</div>
-{{else}}
-  <div class="vpc-card">
-    <div class="vpc-header">
-      <div class="vpc-title">
-        <span class="vpc-name">S3 Buckets</span>
-      </div>
-      <div class="vpc-meta">
-        <span class="count-badge">{{len .S3.Buckets}}</span>
-      </div>
+{{if not (and (hasS3Data .S3) (hasDWData .DW))}}
+  {{if not (or (hasS3Data .S3) (hasDWData .DW))}}
+  <div class="empty-state">No S3 or data warehouse resources cached. Click the refresh button to sync from AWS.</div>
+  {{end}}
+{{end}}
+
+{{if hasS3Data .S3}}
+<div class="vpc-card">
+  <div class="vpc-header">
+    <div class="vpc-title">
+      <span class="vpc-name">S3 Buckets</span>
     </div>
-    <div class="vpc-body">
-      <div class="vpc-section">
-        {{range .S3.Buckets}}
-        <div class="resource-row clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">S3</span>
-          <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
-          <span class="resource-name">{{.Name}}</span>
-          {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
-          <span class="resource-detail">{{.CreationDate}}</span>
+    <div class="vpc-meta">
+      <span class="count-badge">{{len .S3.Buckets}}</span>
+    </div>
+  </div>
+  <div class="vpc-body">
+    <div class="vpc-section">
+      {{range .S3.Buckets}}
+      <div class="resource-row clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
+        <span class="resource-icon">S3</span>
+        <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
+        <span class="resource-name">{{.Name}}</span>
+        {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
+        <span class="resource-detail">{{.CreationDate}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{if and .DW .DW.Redshift}}
+<div class="vpc-card">
+  <div class="vpc-header">
+    <div class="vpc-title">
+      <span class="vpc-name">Redshift Clusters</span>
+    </div>
+    <div class="vpc-meta">
+      <span class="count-badge">{{len .DW.Redshift}}</span>
+    </div>
+  </div>
+  <div class="vpc-body">
+    {{range .DW.Redshift}}
+    <div class="vpc-section rt-section">
+      <div class="rt-header clickable" hx-get="/detail/redshift/{{.ClusterIdentifier}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+        <span class="resource-icon">RS</span>
+        <span class="tag tag-{{.Status}}">{{.Status}}</span>
+        {{if .PubliclyAccessible}}<span class="tag tag-public">public</span>{{else}}<span class="tag tag-isolated">private</span>{{end}}
+        <span class="resource-name">{{.ClusterIdentifier}}</span>
+        <span class="resource-detail">{{.NodeType}} · {{.NumberOfNodes}} nodes</span>
+      </div>
+      <div class="rt-subnets">
+        {{if .VpcId}}
+        <div class="nested-section-label">VPC</div>
+        <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">VPC</span>
+          <span class="resource-name">{{.VpcId}}</span>
         </div>
+        {{end}}
+        {{if .SubnetGroupName}}
+        <div class="nested-section-label">Subnet Group</div>
+        <div class="resource-row">
+          <span class="resource-icon">SNG</span>
+          <span class="resource-name">{{.SubnetGroupName}}</span>
+        </div>
+        {{end}}
+        {{if .SecurityGroups}}
+        <div class="nested-section-label">Security Groups</div>
+        {{range .SecurityGroups}}
+        <div class="resource-row clickable" hx-get="/detail/sg/{{.GroupId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon">SG</span>
+          <span class="resource-name">{{.GroupId}}</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+        </div>
+        {{end}}
         {{end}}
       </div>
     </div>
+    {{end}}
   </div>
+</div>
+{{end}}
+
+{{if and .DW .DW.Athena}}
+<div class="vpc-card">
+  <div class="vpc-header">
+    <div class="vpc-title">
+      <span class="vpc-name">Athena Workgroups</span>
+    </div>
+    <div class="vpc-meta">
+      <span class="count-badge">{{len .DW.Athena}}</span>
+    </div>
+  </div>
+  <div class="vpc-body">
+    <div class="vpc-section">
+      {{range .DW.Athena}}
+      <div class="resource-row clickable" hx-get="/detail/athena/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+        <span class="resource-icon">ATH</span>
+        <span class="tag tag-{{.State}}">{{.State}}</span>
+        <span class="resource-name">{{.Name}}</span>
+        <span class="resource-detail">{{.EngineVersion}}</span>
+        <span class="resource-detail">{{.CreationTime}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{if and .DW .DW.Glue}}
+<div class="vpc-card">
+  <div class="vpc-header">
+    <div class="vpc-title">
+      <span class="vpc-name">Glue Databases</span>
+    </div>
+    <div class="vpc-meta">
+      <span class="count-badge">{{len .DW.Glue}}</span>
+    </div>
+  </div>
+  <div class="vpc-body">
+    <div class="vpc-section">
+      {{range .DW.Glue}}
+      <div class="resource-row clickable" hx-get="/detail/glue/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+        <span class="resource-icon">GLUE</span>
+        <span class="resource-name">{{.Name}}</span>
+        {{if .Description}}<span class="resource-detail">{{.Description}}</span>{{end}}
+        <span class="resource-detail">{{.CreateTime}}</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
 {{end}}
 {{end}}
