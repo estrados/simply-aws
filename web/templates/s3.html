@@ -15,7 +15,7 @@
 <div class="vpc-card">
   <div class="vpc-header">
     <div class="vpc-title">
-      <span class="vpc-name">S3 Buckets</span>
+      <span class="vpc-name">S3 Buckets</span> <span class="tag tag-serverless">serverless</span>
     </div>
     <div class="vpc-meta">
       <span class="count-badge">{{len .S3.Buckets}}</span>
@@ -25,7 +25,7 @@
     <div class="vpc-section">
       {{range .S3.Buckets}}
       <div class="resource-row clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
-        <span class="resource-icon">S3</span>
+        <span class="resource-icon resource-icon-s3">S3</span>
         <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
         <span class="resource-name">{{.Name}}</span>
         {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
@@ -51,7 +51,7 @@
     {{range .DW.Redshift}}
     <div class="vpc-section rt-section">
       <div class="rt-header clickable" hx-get="/detail/redshift/{{.ClusterIdentifier}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-        <span class="resource-icon">RS</span>
+        <span class="resource-icon resource-icon-rs">RS</span>
         <span class="tag tag-{{.Status}}">{{.Status}}</span>
         {{if .PubliclyAccessible}}<span class="tag tag-public">public</span>{{else}}<span class="tag tag-isolated">private</span>{{end}}
         <span class="resource-name">{{.ClusterIdentifier}}</span>
@@ -61,14 +61,15 @@
         {{if .VpcId}}
         <div class="nested-section-label">VPC</div>
         <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">VPC</span>
+          <span class="resource-icon resource-icon-vpc">VPC</span>
+          {{$vname := vpcName .VpcId $.Region}}{{if $vname}}<span class="tag">{{$vname}}</span>{{end}}
           <span class="resource-name">{{.VpcId}}</span>
         </div>
         {{end}}
         {{if .SubnetGroupName}}
         <div class="nested-section-label">Subnet Group</div>
         <div class="resource-row">
-          <span class="resource-icon">SNG</span>
+          <span class="resource-icon resource-icon-sng">SNG</span>
           <span class="resource-name">{{.SubnetGroupName}}</span>
         </div>
         {{end}}
@@ -76,12 +77,17 @@
         <div class="nested-section-label">Security Groups</div>
         {{range .SecurityGroups}}
         <div class="resource-row clickable" hx-get="/detail/sg/{{.GroupId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">SG</span>
+          <span class="resource-icon resource-icon-sg">SG</span>
           <span class="resource-name">{{.GroupId}}</span>
           <span class="tag tag-{{.Status}}">{{.Status}}</span>
         </div>
         {{end}}
         {{end}}
+        <div class="nested-section-label">Endpoints</div>
+        <div class="endpoint-info">
+          <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .Endpoint}}{{.Endpoint}}:{{.Port}}{{else}}—{{end}}</code></div>
+          <div class="endpoint-row"><span class="endpoint-label">Public</span> <code class="endpoint-value">{{if .PubliclyAccessible}}{{if .Endpoint}}{{.Endpoint}}:{{.Port}}{{else}}pending{{end}}{{else}}—{{end}}</code></div>
+        </div>
       </div>
     </div>
     {{end}}
@@ -93,7 +99,7 @@
 <div class="vpc-card">
   <div class="vpc-header">
     <div class="vpc-title">
-      <span class="vpc-name">Athena Workgroups</span>
+      <span class="vpc-name">Athena Workgroups</span> <span class="tag tag-serverless">serverless</span>
     </div>
     <div class="vpc-meta">
       <span class="count-badge">{{len .DW.Athena}}</span>
@@ -103,7 +109,7 @@
     <div class="vpc-section">
       {{range .DW.Athena}}
       <div class="resource-row clickable" hx-get="/detail/athena/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-        <span class="resource-icon">ATH</span>
+        <span class="resource-icon resource-icon-ath">ATH</span>
         <span class="tag tag-{{.State}}">{{.State}}</span>
         <span class="resource-name">{{.Name}}</span>
         <span class="resource-detail">{{.EngineVersion}}</span>
@@ -119,7 +125,7 @@
 <div class="vpc-card">
   <div class="vpc-header">
     <div class="vpc-title">
-      <span class="vpc-name">Glue Databases</span>
+      <span class="vpc-name">Glue Databases</span> <span class="tag tag-serverless">serverless</span>
     </div>
     <div class="vpc-meta">
       <span class="count-badge">{{len .DW.Glue}}</span>
@@ -129,7 +135,7 @@
     <div class="vpc-section">
       {{range .DW.Glue}}
       <div class="resource-row clickable" hx-get="/detail/glue/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-        <span class="resource-icon">GLUE</span>
+        <span class="resource-icon resource-icon-glue">GLUE</span>
         <span class="resource-name">{{.Name}}</span>
         {{if .Description}}<span class="resource-detail">{{.Description}}</span>{{end}}
         <span class="resource-detail">{{.CreateTime}}</span>

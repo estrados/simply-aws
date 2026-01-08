@@ -25,9 +25,22 @@ var (
 func Start(addr string, status awscli.Status) error {
 	awsStatus = status
 
+	iconClassMap := map[string]string{
+		"VPC": "resource-icon-vpc", "SUBNET": "resource-icon-sub", "SG": "resource-icon-sg",
+		"IGW": "resource-icon-igw", "NAT": "resource-icon-nat", "RT": "resource-icon-rt",
+		"RDS": "resource-icon-rds", "DDB": "resource-icon-ddb", "CACHE": "resource-icon-cache",
+		"S3": "resource-icon-s3", "RS": "resource-icon-rs", "ATH": "resource-icon-ath",
+		"GLUE": "resource-icon-glue", "SNG": "resource-icon-sng",
+	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
 		"regionDisplay": awscli.RegionDisplayName,
+		"iconClass": func(t string) string {
+			if c, ok := iconClassMap[t]; ok {
+				return c
+			}
+			return ""
+		},
 		"hasVPCData": func(v *sawsSync.VPCData) bool {
 			return v != nil && len(v.VPCs) > 0
 		},
@@ -39,6 +52,18 @@ func Start(addr string, status awscli.Status) error {
 		},
 		"hasDBData": func(v *sawsSync.DatabaseData) bool {
 			return v != nil && (len(v.RDS) > 0 || len(v.DynamoDB) > 0 || len(v.ElastiCache) > 0)
+		},
+		"vpcName": func(vpcId string, region string) string {
+			vpcData, err := sawsSync.LoadVPCData(region)
+			if err != nil || vpcData == nil {
+				return ""
+			}
+			for _, v := range vpcData.VPCs {
+				if v.VpcId == vpcId {
+					return v.Name
+				}
+			}
+			return ""
 		},
 		"formatBytes": func(b int64) string {
 			if b < 1024 {
@@ -252,7 +277,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true, "streaming": true}
+	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true, "streaming": true, "ai": true}
 	if !validTabs[tab] {
 		http.NotFound(w, r)
 		return
@@ -587,6 +612,18 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 					if endpoint == "" {
 						endpoint = "—"
 					}
+					vpcId := inst.VpcId
+					if vpcId == "" {
+						vpcId = "—"
+					}
+					subnetGroup := inst.SubnetGroupName
+					if subnetGroup == "" {
+						subnetGroup = "—"
+					}
+					sgs := "—"
+					if len(inst.SecurityGroups) > 0 {
+						sgs = strings.Join(inst.SecurityGroups, ", ")
+					}
 					detail = detailData{
 						Type:  "RDS",
 						Title: inst.DBInstanceId,
@@ -600,7 +637,9 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 							{"Publicly Accessible", boolStr(inst.PubliclyAccessible)},
 							{"Endpoint", endpoint},
 							{"Port", fmt.Sprintf("%d", inst.Port)},
-							{"VPC ID", inst.VpcId},
+							{"VPC ID", vpcId},
+							{"Subnet Group", subnetGroup},
+							{"Security Groups", sgs},
 						},
 					}
 					break
@@ -633,16 +672,20 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 		if dbData != nil {
 			for _, c := range dbData.ElastiCache {
 				if c.CacheClusterId == resId {
+					fields := []detailField{
+						{"Cluster ID", c.CacheClusterId},
+						{"Engine", c.Engine + " " + c.EngineVersion},
+						{"Node Type", c.CacheNodeType},
+						{"Nodes", fmt.Sprintf("%d", c.NumNodes)},
+						{"Status", c.Status},
+					}
+					if len(c.SecurityGroups) > 0 {
+						fields = append(fields, detailField{"Security Groups", strings.Join(c.SecurityGroups, ", ")})
+					}
 					detail = detailData{
-						Type:  "CACHE",
-						Title: c.CacheClusterId,
-						Fields: []detailField{
-							{"Cluster ID", c.CacheClusterId},
-							{"Engine", c.Engine + " " + c.EngineVersion},
-							{"Node Type", c.CacheNodeType},
-							{"Nodes", fmt.Sprintf("%d", c.NumNodes)},
-							{"Status", c.Status},
-						},
+						Type:   "CACHE",
+						Title:  c.CacheClusterId,
+						Fields: fields,
 					}
 					break
 				}

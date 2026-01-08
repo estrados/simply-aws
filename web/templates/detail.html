@@ -2,7 +2,7 @@
   <div class="detail-sidebar">
     <div class="detail-header">
       <div>
-        <span class="resource-icon">{{.Type}}</span>
+        <span class="resource-icon {{iconClass .Type}}">{{.Type}}</span>
         <span class="detail-title">{{.Title}}</span>
       </div>
       <button class="settings-close" onclick="document.getElementById('detail-container').innerHTML=''">&times;</button>

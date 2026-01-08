@@ -2,8 +2,11 @@ package awscli
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Status struct {
@@ -14,7 +17,36 @@ type Status struct {
 	Profile   string `json:"profile,omitempty"`
 }
 
+const cacheTTL = 60 * time.Second
+
+func cacheFile() string {
+	return filepath.Join(os.TempDir(), "saws-aws-detect.json")
+}
+
 func Detect() Status {
+	// Try reading from cache
+	if info, err := os.Stat(cacheFile()); err == nil {
+		if time.Since(info.ModTime()) < cacheTTL {
+			if data, err := os.ReadFile(cacheFile()); err == nil {
+				var cached Status
+				if json.Unmarshal(data, &cached) == nil && cached.Installed {
+					return cached
+				}
+			}
+		}
+	}
+
+	s := detect()
+
+	// Write to cache
+	if data, err := json.Marshal(s); err == nil {
+		os.WriteFile(cacheFile(), data, 0644)
+	}
+
+	return s
+}
+
+func detect() Status {
 	s := Status{}
 
 	// Check if aws CLI exists

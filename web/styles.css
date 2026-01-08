@@ -122,6 +122,33 @@ main {
   color: var(--text-dim);
   margin-bottom: 16px;
 }
+.tab-desc a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tab-desc a:hover {
+  color: var(--accent-hover);
+}
+.tab-desc-dim a {
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tab-desc-dim a:hover {
+  color: var(--text);
+}
+.tab-desc-dim {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.5;
+  margin-top: -12px;
+  margin-bottom: 16px;
+}
+.not-yet-label {
+  color: #ef4444;
+  opacity: 1;
+}
 
 .btn {
   background: var(--accent);
@@ -364,16 +391,31 @@ main {
 }
 
 .resource-icon {
-  background: var(--surface2);
-  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 10px;
   font-weight: 700;
   font-family: "SF Mono", Menlo, monospace;
-  color: var(--accent);
+  color: #fff;
   flex-shrink: 0;
+  min-width: 32px;
+  text-align: center;
+  background: #5a5e72;
 }
+.resource-icon-vpc   { background: #2563eb; }
+.resource-icon-sub   { background: #0891b2; }
+.resource-icon-sg    { background: #d946a8; }
+.resource-icon-igw   { background: #16a34a; }
+.resource-icon-nat   { background: #059669; }
+.resource-icon-rt    { background: #9333ea; }
+.resource-icon-rds   { background: #2563eb; }
+.resource-icon-ddb   { background: #d97706; }
+.resource-icon-cache { background: #dc2626; }
+.resource-icon-s3    { background: #16a34a; }
+.resource-icon-rs    { background: #7c3aed; }
+.resource-icon-ath   { background: #0284c7; }
+.resource-icon-glue  { background: #0d9488; }
+.resource-icon-sng   { background: #6366f1; }
 
 .resource-name {
   font-weight: 500;
@@ -467,6 +509,7 @@ code {
 .tag-public { background: rgba(231, 76, 60, 0.15); color: var(--red); }
 .tag-egress-only { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
 .tag-isolated { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
+.tag-serverless { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
 .tag-main { background: rgba(52, 152, 219, 0.15); color: #3498db; }
 .tag-ENABLED, .tag-enabled { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 .tag-DISABLED, .tag-disabled { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
@@ -515,6 +558,29 @@ code {
   border-top: none;
   margin-top: 0;
   padding-top: 4px;
+}
+
+.endpoint-info {
+  padding: 4px 0 4px 4px;
+}
+.endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.endpoint-label {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  min-width: 48px;
+}
+.endpoint-value {
+  color: var(--text);
+  font-size: 11px;
+  font-family: "SF Mono", Menlo, monospace;
 }
 
 .rt-no-subnets {

@@ -19,18 +19,48 @@
       </div>
     </div>
     <div class="vpc-body">
-      <div class="vpc-section">
-        {{range .DB.RDS}}
-        <div class="resource-row clickable" hx-get="/detail/rds/{{.DBInstanceId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">RDS</span>
+      {{range .DB.RDS}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/rds/{{.DBInstanceId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-rds">RDS</span>
           <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          {{if .PubliclyAccessible}}<span class="tag tag-public">public</span>{{else}}<span class="tag tag-isolated">private</span>{{end}}
           <span class="resource-name">{{.DBInstanceId}}</span>
-          <span class="resource-detail">{{.Engine}} {{.EngineVersion}}</span>
-          <span class="resource-detail">{{.InstanceClass}}</span>
-          {{if .PubliclyAccessible}}<span class="tag tag-public">public</span>{{end}}
+          <span class="resource-detail">{{.Engine}} {{.EngineVersion}} · {{.InstanceClass}}</span>
         </div>
-        {{end}}
+        <div class="rt-subnets">
+          {{if .VpcId}}
+          <div class="nested-section-label">VPC</div>
+          <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-vpc">VPC</span>
+            {{$vname := vpcName .VpcId $.Region}}{{if $vname}}<span class="tag">{{$vname}}</span>{{end}}
+            <span class="resource-name">{{.VpcId}}</span>
+          </div>
+          {{end}}
+          {{if .SubnetGroupName}}
+          <div class="nested-section-label">Subnet Group</div>
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-sng">SNG</span>
+            <span class="resource-name">{{.SubnetGroupName}}</span>
+          </div>
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          <div class="nested-section-label">Endpoints</div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .Endpoint}}{{.Endpoint}}:{{.Port}}{{else}}—{{end}}</code></div>
+            <div class="endpoint-row"><span class="endpoint-label">Public</span> <code class="endpoint-value">{{if .PubliclyAccessible}}{{if .Endpoint}}{{.Endpoint}}:{{.Port}}{{else}}pending{{end}}{{else}}—{{end}}</code></div>
+          </div>
+        </div>
       </div>
+      {{end}}
     </div>
   </div>
   {{end}}
@@ -39,25 +69,31 @@
   <div class="vpc-card">
     <div class="vpc-header">
       <div class="vpc-title">
-        <span class="vpc-name">DynamoDB Tables</span>
+        <span class="vpc-name">DynamoDB Tables</span> <span class="tag tag-serverless">serverless</span>
       </div>
       <div class="vpc-meta">
         <span class="count-badge">{{len .DB.DynamoDB}}</span>
       </div>
     </div>
     <div class="vpc-body">
-      <div class="vpc-section">
         {{range .DB.DynamoDB}}
-        <div class="resource-row clickable" hx-get="/detail/dynamodb/{{.TableName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">DDB</span>
-          <span class="tag tag-{{.Status}}">{{.Status}}</span>
-          <span class="resource-name">{{.TableName}}</span>
-          <span class="resource-detail">{{.ItemCount}} items</span>
-          <span class="resource-detail">{{formatBytes .SizeBytes}}</span>
-          <span class="resource-detail">{{.BillingMode}}</span>
+        <div class="vpc-section rt-section">
+          <div class="rt-header clickable" hx-get="/detail/dynamodb/{{.TableName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-ddb">DDB</span>
+            <span class="tag tag-{{.Status}}">{{.Status}}</span>
+            <span class="resource-name">{{.TableName}}</span>
+            <span class="resource-detail">{{.ItemCount}} items</span>
+            <span class="resource-detail">{{formatBytes .SizeBytes}}</span>
+            <span class="resource-detail">{{.BillingMode}}</span>
+          </div>
+          <div class="rt-subnets">
+            <div class="nested-section-label">Endpoints</div>
+            <div class="endpoint-info">
+              <div class="endpoint-row"><span class="endpoint-label">API</span> <code class="endpoint-value">dynamodb.{{$.Region}}.amazonaws.com</code></div>
+            </div>
+          </div>
         </div>
         {{end}}
-      </div>
     </div>
   </div>
   {{end}}
@@ -73,18 +109,47 @@
       </div>
     </div>
     <div class="vpc-body">
-      <div class="vpc-section">
-        {{range .DB.ElastiCache}}
-        <div class="resource-row clickable" hx-get="/detail/elasticache/{{.CacheClusterId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
-          <span class="resource-icon">CACHE</span>
+      {{range .DB.ElastiCache}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/elasticache/{{.CacheClusterId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-cache">CACHE</span>
           <span class="tag tag-{{.Status}}">{{.Status}}</span>
           <span class="resource-name">{{.CacheClusterId}}</span>
-          <span class="resource-detail">{{.Engine}} {{.EngineVersion}}</span>
-          <span class="resource-detail">{{.CacheNodeType}}</span>
-          <span class="resource-detail">{{.NumNodes}} nodes</span>
+          <span class="resource-detail">{{.Engine}} {{.EngineVersion}} · {{.CacheNodeType}} · {{.NumNodes}} nodes</span>
         </div>
-        {{end}}
+        <div class="rt-subnets">
+          {{if .VpcId}}
+          <div class="nested-section-label">VPC</div>
+          <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-vpc">VPC</span>
+            {{$vname := vpcName .VpcId $.Region}}{{if $vname}}<span class="tag">{{$vname}}</span>{{end}}
+            <span class="resource-name">{{.VpcId}}</span>
+          </div>
+          {{end}}
+          {{if .SubnetGroupName}}
+          <div class="nested-section-label">Subnet Group</div>
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-sng">SNG</span>
+            <span class="resource-name">{{.SubnetGroupName}}</span>
+          </div>
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          <div class="nested-section-label">Endpoints</div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .Endpoint}}{{.Endpoint}}:{{.Port}}{{else}}—{{end}}</code></div>
+            <div class="endpoint-row"><span class="endpoint-label">Public</span> <code class="endpoint-value">—</code></div>
+          </div>
+        </div>
       </div>
+      {{end}}
     </div>
   </div>
   {{end}}
