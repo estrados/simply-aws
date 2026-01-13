@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/estrados/simply-aws/internal/awscli"
 	"github.com/estrados/simply-aws/internal/cfn"
@@ -31,6 +32,7 @@ func Start(addr string, status awscli.Status) error {
 		"RDS": "resource-icon-rds", "DDB": "resource-icon-ddb", "CACHE": "resource-icon-cache",
 		"S3": "resource-icon-s3", "RS": "resource-icon-rs", "ATH": "resource-icon-ath",
 		"GLUE": "resource-icon-glue", "SNG": "resource-icon-sng",
+		"EC2": "resource-icon-ec2", "ECS": "resource-icon-ecs", "LN": "resource-icon-lambda",
 	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
@@ -52,6 +54,17 @@ func Start(addr string, status awscli.Status) error {
 		},
 		"hasDBData": func(v *sawsSync.DatabaseData) bool {
 			return v != nil && (len(v.RDS) > 0 || len(v.DynamoDB) > 0 || len(v.ElastiCache) > 0)
+		},
+		"hasComputeData": func(v *sawsSync.ComputeData) bool {
+			return v != nil && (len(v.EC2) > 0 || len(v.ECS) > 0 || len(v.Lambda) > 0)
+		},
+		"hasFargate": func(providers []string) bool {
+			for _, p := range providers {
+				if p == "FARGATE" {
+					return true
+				}
+			}
+			return false
 		},
 		"vpcName": func(vpcId string, region string) string {
 			vpcData, err := sawsSync.LoadVPCData(region)
@@ -201,6 +214,7 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/sync/vpc", handleSyncVPC)
 	mux.HandleFunc("/sync/s3", handleSyncS3)
 	mux.HandleFunc("/sync/database", handleSyncDatabase)
+	mux.HandleFunc("/sync/compute", handleSyncCompute)
 	mux.HandleFunc("/detail/", handleDetail)
 
 	// JSON APIs (kept for sync/templates)
@@ -224,6 +238,8 @@ type pageData struct {
 	S3             *sawsSync.S3Data
 	DW             *sawsSync.DataWarehouseData
 	DB             *sawsSync.DatabaseData
+	Compute        *sawsSync.ComputeData
+	SyncedAt       string
 }
 
 func newPageData() pageData {
@@ -277,7 +293,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true, "streaming": true, "ai": true}
+	validTabs := map[string]bool{"net": true, "compute": true, "database": true, "s3": true, "streaming": true, "ai": true, "iam": true}
 	if !validTabs[tab] {
 		http.NotFound(w, r)
 		return
@@ -295,12 +311,16 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	case "database":
 		dbData, _ := sawsSync.LoadDatabaseData(region)
 		data.DB = dbData
+	case "compute":
+		computeData, _ := sawsSync.LoadComputeData(region)
+		data.Compute = computeData
 	case "s3":
 		s3Data, _ := sawsSync.LoadS3DataEnriched()
 		data.S3 = s3Data
 		dwData, _ := sawsSync.LoadDataWarehouseData(region)
 		data.DW = dwData
 	}
+	data.SyncedAt = syncedAtForTab(tab, region)
 
 	tmpl.ExecuteTemplate(w, "layout", data)
 }
@@ -330,6 +350,11 @@ func handleVPC(w http.ResponseWriter, r *http.Request) {
 	tmpl.ExecuteTemplate(w, "vpc-panel", data)
 }
 
+func writeSyncedAtOOB(w http.ResponseWriter, tab, region string) {
+	label := syncedAtForTab(tab, region)
+	fmt.Fprintf(w, `<span id="synced-at-label" hx-swap-oob="true" class="synced-at-label">%s</span>`, label)
+}
+
 func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
@@ -346,6 +371,7 @@ func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
 	data.Region = region
 	data.VPC = vpcData
 	tmpl.ExecuteTemplate(w, "vpc-panel", data)
+	writeSyncedAtOOB(w, "net", region)
 }
 
 func handleSyncS3(w http.ResponseWriter, r *http.Request) {
@@ -367,6 +393,7 @@ func handleSyncS3(w http.ResponseWriter, r *http.Request) {
 	data.S3 = s3Data
 	data.DW = dwData
 	tmpl.ExecuteTemplate(w, "s3-content", data)
+	writeSyncedAtOOB(w, "s3", region)
 }
 
 func handleSyncDatabase(w http.ResponseWriter, r *http.Request) {
@@ -385,6 +412,26 @@ func handleSyncDatabase(w http.ResponseWriter, r *http.Request) {
 	data.Region = region
 	data.DB = dbData
 	tmpl.ExecuteTemplate(w, "database-content", data)
+	writeSyncedAtOOB(w, "database", region)
+}
+
+func handleSyncCompute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	sawsSync.SyncComputeData(region)
+	computeData, _ := sawsSync.LoadComputeData(region)
+	data := newPageData()
+	data.Region = region
+	data.Compute = computeData
+	tmpl.ExecuteTemplate(w, "compute-content", data)
+	writeSyncedAtOOB(w, "compute", region)
 }
 
 type detailData struct {
@@ -418,8 +465,7 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 
 	vpcData, _ := sawsSync.LoadVPCData(region)
 	if vpcData == nil {
-		http.Error(w, "no data", 404)
-		return
+		vpcData = &sawsSync.VPCData{}
 	}
 
 	var detail detailData
@@ -790,6 +836,106 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	case "ec2":
+		computeData, _ := sawsSync.LoadComputeData(r.URL.Query().Get("region"))
+		if computeData != nil {
+			for _, inst := range computeData.EC2 {
+				if inst.InstanceId == resId {
+					publicIP := inst.PublicIP
+					if publicIP == "" {
+						publicIP = "—"
+					}
+					privateIP := inst.PrivateIP
+					if privateIP == "" {
+						privateIP = "—"
+					}
+					vpcId := inst.VpcId
+					if vpcId == "" {
+						vpcId = "—"
+					}
+					sgs := "—"
+					if len(inst.SecurityGroups) > 0 {
+						sgs = strings.Join(inst.SecurityGroups, ", ")
+					}
+					detail = detailData{
+						Type:  "EC2",
+						Title: nameOr(inst.Name, inst.InstanceId),
+						Fields: []detailField{
+							{"Instance ID", inst.InstanceId},
+							{"Name", nameOr(inst.Name, "—")},
+							{"Instance Type", inst.InstanceType},
+							{"State", inst.State},
+							{"Public IP", publicIP},
+							{"Private IP", privateIP},
+							{"VPC ID", vpcId},
+							{"Subnet ID", nameOr(inst.SubnetId, "—")},
+							{"Security Groups", sgs},
+							{"Launch Time", inst.LaunchTime},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "ecs":
+		computeData, _ := sawsSync.LoadComputeData(r.URL.Query().Get("region"))
+		if computeData != nil {
+			for _, c := range computeData.ECS {
+				if c.ClusterName == resId {
+					providers := "—"
+					if len(c.CapacityProviders) > 0 {
+						providers = strings.Join(c.CapacityProviders, ", ")
+					}
+					detail = detailData{
+						Type:  "ECS",
+						Title: c.ClusterName,
+						Fields: []detailField{
+							{"Cluster Name", c.ClusterName},
+							{"Status", c.Status},
+							{"Running Tasks", fmt.Sprintf("%d", c.RunningTasks)},
+							{"Pending Tasks", fmt.Sprintf("%d", c.PendingTasks)},
+							{"Services", fmt.Sprintf("%d", c.Services)},
+							{"Capacity Providers", providers},
+							{"Cluster ARN", c.ClusterArn},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "lambda":
+		computeData, _ := sawsSync.LoadComputeData(r.URL.Query().Get("region"))
+		if computeData != nil {
+			for _, fn := range computeData.Lambda {
+				if fn.FunctionName == resId {
+					fields := []detailField{
+						{"Function Name", fn.FunctionName},
+						{"Runtime", nameOr(fn.Runtime, "—")},
+						{"Handler", nameOr(fn.Handler, "—")},
+						{"State", fn.State},
+						{"Memory", fmt.Sprintf("%d MB", fn.MemorySize)},
+						{"Timeout", fmt.Sprintf("%d s", fn.Timeout)},
+						{"Code Size", formatBytes(fn.CodeSize)},
+						{"Last Modified", fn.LastModified},
+					}
+					if fn.VpcId != "" {
+						fields = append(fields, detailField{"VPC ID", fn.VpcId})
+						if len(fn.SubnetIds) > 0 {
+							fields = append(fields, detailField{"Subnets", strings.Join(fn.SubnetIds, ", ")})
+						}
+						if len(fn.SecurityGroups) > 0 {
+							fields = append(fields, detailField{"Security Groups", strings.Join(fn.SecurityGroups, ", ")})
+						}
+					}
+					detail = detailData{
+						Type:   "LN",
+						Title:  fn.FunctionName,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
 	}
 
 	if detail.Type == "" {
@@ -905,6 +1051,35 @@ func boolStr(b bool) string {
 		return "Yes"
 	}
 	return "No"
+}
+
+func formatSyncTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	now := time.Now()
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "synced " + t.Format("15:04")
+	}
+	return "synced " + t.Format("Jan 2 15:04")
+}
+
+func syncedAtForTab(tab, region string) string {
+	var keys []string
+	switch tab {
+	case "net":
+		keys = []string{region + ":vpcs", region + ":subnets", region + ":security-groups"}
+	case "compute":
+		keys = []string{region + ":ec2", region + ":ecs-enriched", region + ":lambda"}
+	case "database":
+		keys = []string{region + ":rds", region + ":dynamodb", region + ":elasticache-enriched"}
+	case "s3":
+		keys = []string{"s3", "s3:enriched", region + ":redshift", region + ":athena"}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return formatSyncTime(sawsSync.CacheSyncedAt(keys...))
 }
 
 func formatBytes(b int64) string {

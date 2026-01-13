@@ -6,18 +6,22 @@
   <a class="tab{{if eq .Tab "s3"}} active{{end}}" href="/{{.Region}}/s3">S3 & Data</a>
   <a class="tab{{if eq .Tab "streaming"}} active{{end}}" href="/{{.Region}}/streaming">Queues & Streaming</a>
   <a class="tab{{if eq .Tab "ai"}} active{{end}}" href="/{{.Region}}/ai">AI & ML</a>
+  <a class="tab{{if eq .Tab "iam"}} active{{end}}" href="/{{.Region}}/iam">IAM</a>
 </div>
 <div class="tab-desc">
   {{if eq .Tab "net"}}<a href="https://aws.amazon.com/vpc/" target="_blank">VPCs</a>, subnets, security groups, internet gateways, NAT gateways, and route tables.
-  {{else if eq .Tab "compute"}}<a href="https://aws.amazon.com/ec2/" target="_blank">EC2</a> instances, <a href="https://aws.amazon.com/ecs/" target="_blank">ECS</a> clusters, <a href="https://aws.amazon.com/lambda/" target="_blank">Lambda</a> functions, and other compute resources.
+  {{else if eq .Tab "compute"}}<a href="https://aws.amazon.com/ec2/" target="_blank">EC2</a> instances, <a href="https://aws.amazon.com/ecs/" target="_blank">ECS</a> clusters, <a href="https://aws.amazon.com/lambda/" target="_blank">Lambda</a> functions.
   {{else if eq .Tab "database"}}<a href="https://aws.amazon.com/rds/" target="_blank">RDS</a> instances, <a href="https://aws.amazon.com/dynamodb/" target="_blank">DynamoDB</a> tables, and <a href="https://aws.amazon.com/elasticache/" target="_blank">ElastiCache</a> clusters.
   {{else if eq .Tab "s3"}}<a href="https://aws.amazon.com/s3/" target="_blank">S3</a> buckets, <a href="https://aws.amazon.com/redshift/" target="_blank">Redshift</a> clusters, <a href="https://aws.amazon.com/athena/" target="_blank">Athena</a> workgroups, and <a href="https://aws.amazon.com/glue/" target="_blank">Glue</a> databases.
   {{else if eq .Tab "streaming"}}<a href="https://aws.amazon.com/sqs/" target="_blank">SQS</a> queues, <a href="https://aws.amazon.com/sns/" target="_blank">SNS</a> topics, <a href="https://aws.amazon.com/kinesis/" target="_blank">Kinesis</a> streams, <a href="https://aws.amazon.com/eventbridge/" target="_blank">EventBridge</a> buses, and <a href="https://aws.amazon.com/msk/" target="_blank">MSK</a> clusters.
   {{else if eq .Tab "ai"}}<a href="https://aws.amazon.com/sagemaker/" target="_blank">SageMaker</a>, <a href="https://aws.amazon.com/bedrock/" target="_blank">Bedrock</a>, <a href="https://aws.amazon.com/comprehend/" target="_blank">Comprehend</a>, <a href="https://aws.amazon.com/rekognition/" target="_blank">Rekognition</a>, and other AI/ML services.
+  {{else if eq .Tab "iam"}}<a href="https://aws.amazon.com/iam/" target="_blank">IAM</a> users, roles, policies, groups, and trust relationships.
   {{end}}
 </div>
 {{if eq .Tab "database"}}
 <div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/neptune/" target="_blank">Neptune</a>, <a href="https://aws.amazon.com/documentdb/" target="_blank">DocumentDB</a>, <a href="https://aws.amazon.com/memorydb/" target="_blank">MemoryDB</a>, <a href="https://aws.amazon.com/timestream/" target="_blank">Timestream</a>, <a href="https://aws.amazon.com/keyspaces/" target="_blank">Keyspaces</a>.</div>
+{{else if eq .Tab "compute"}}
+<div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/lightsail/" target="_blank">Lightsail</a>, <a href="https://aws.amazon.com/apprunner/" target="_blank">App Runner</a>, <a href="https://aws.amazon.com/elasticbeanstalk/" target="_blank">Elastic Beanstalk</a>, <a href="https://aws.amazon.com/batch/" target="_blank">Batch</a>, <a href="https://aws.amazon.com/eks/" target="_blank">EKS</a>.</div>
 {{else if eq .Tab "s3"}}
 <div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/opensearch-service/" target="_blank">OpenSearch</a>, <a href="https://aws.amazon.com/emr/" target="_blank">EMR</a>, <a href="https://aws.amazon.com/lake-formation/" target="_blank">Lake Formation</a>.</div>
 {{end}}
@@ -33,5 +37,7 @@
   {{template "streaming-panel" .}}
 {{else if eq .Tab "ai"}}
   {{template "ai-panel" .}}
+{{else if eq .Tab "iam"}}
+  {{template "iam-panel" .}}
 {{end}}
 {{end}}

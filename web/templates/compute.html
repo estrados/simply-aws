@@ -1,5 +1,156 @@
 {{define "compute-panel"}}
 <div id="compute-content">
-  <div class="empty-state">Compute resources coming soon.</div>
+  {{template "compute-content" .}}
 </div>
+{{end}}
+
+{{define "compute-content"}}
+{{if not (hasComputeData .Compute)}}
+  <div class="empty-state">No compute resources cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{if .Compute.EC2}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">EC2 Instances</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Compute.EC2}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Compute.EC2}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/ec2/{{.InstanceId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-ec2">EC2</span>
+          <span class="tag tag-{{.State}}">{{.State}}</span>
+          <span class="tag">{{.InstanceType}}</span>
+          <span class="resource-name">{{if .Name}}{{.Name}}{{else}}{{.InstanceId}}{{end}}</span>
+        </div>
+        <div class="rt-subnets">
+          {{if .VpcId}}
+          <div class="nested-section-label">VPC</div>
+          <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-vpc">VPC</span>
+            {{$vname := vpcName .VpcId $.Region}}{{if $vname}}<span class="tag">{{$vname}}</span>{{end}}
+            <span class="resource-name">{{.VpcId}}</span>
+          </div>
+          {{end}}
+          {{if .SubnetId}}
+          <div class="nested-section-label">Subnet</div>
+          <div class="resource-row clickable" hx-get="/detail/subnet/{{.SubnetId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sub">SUB</span>
+            <span class="resource-name">{{.SubnetId}}</span>
+          </div>
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          <div class="nested-section-label">Endpoints</div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .PrivateIP}}{{.PrivateIP}}{{else}}—{{end}}</code></div>
+            <div class="endpoint-row"><span class="endpoint-label">Public</span> <code class="endpoint-value">{{if .PublicIP}}{{.PublicIP}}{{else}}—{{end}}</code></div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Compute.ECS}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">ECS Clusters</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Compute.ECS}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Compute.ECS}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/ecs/{{.ClusterName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-ecs">ECS</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          {{if hasFargate .CapacityProviders}}<span class="tag tag-fargate">FARGATE</span>{{end}}
+          <span class="resource-name">{{.ClusterName}}</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">{{.RunningTasks}} running · {{.PendingTasks}} pending · {{.Services}} services</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Compute.Lambda}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">Lambda Functions</span> <span class="tag tag-serverless">serverless</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Compute.Lambda}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Compute.Lambda}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/lambda/{{.FunctionName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-lambda">&lambda;</span>
+          <span class="tag tag-{{.State}}">{{.State}}</span>
+          <span class="resource-name">{{.FunctionName}}</span>
+          <span class="resource-detail">{{.Runtime}} · {{.MemorySize}} MB · {{.Timeout}}s timeout</span>
+        </div>
+        <div class="rt-subnets">
+          {{if .VpcId}}
+          <div class="nested-section-label">VPC</div>
+          <div class="resource-row clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-vpc">VPC</span>
+            {{$vname := vpcName .VpcId $.Region}}{{if $vname}}<span class="tag">{{$vname}}</span>{{end}}
+            <span class="resource-name">{{.VpcId}}</span>
+          </div>
+          {{if .SubnetIds}}
+          <div class="nested-section-label">Subnets</div>
+          {{range .SubnetIds}}
+          <div class="resource-row clickable" hx-get="/detail/subnet/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sub">SUB</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{end}}
+          <div class="nested-section-label">Endpoints</div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><span class="endpoint-label">API</span> <code class="endpoint-value">lambda.{{$.Region}}.amazonaws.com</code></div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+{{end}}
 {{end}}

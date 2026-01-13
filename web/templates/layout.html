@@ -11,9 +11,10 @@
   <header>
     <h1><span>saws</span></h1>
     <div id="header-right">
+      <span id="synced-at-label" class="synced-at-label">{{.SyncedAt}}</span>
       <button class="icon-btn" id="sync-btn"
-        hx-post="{{if eq .Tab "s3"}}/sync/s3{{else if eq .Tab "database"}}/sync/database{{else}}/sync/vpc{{end}}"
-        hx-target="{{if eq .Tab "s3"}}#s3-content{{else if eq .Tab "database"}}#database-content{{else}}#vpc-content{{end}}"
+        hx-post="{{if eq .Tab "compute"}}/sync/compute{{else if eq .Tab "s3"}}/sync/s3{{else if eq .Tab "database"}}/sync/database{{else}}/sync/vpc{{end}}"
+        hx-target="{{if eq .Tab "compute"}}#compute-content{{else if eq .Tab "s3"}}#s3-content{{else if eq .Tab "database"}}#database-content{{else}}#vpc-content{{end}}"
         hx-swap="innerHTML"
         hx-vals='{"region":"{{.CurrentRegion}}"}'
         hx-indicator="#sync-btn"

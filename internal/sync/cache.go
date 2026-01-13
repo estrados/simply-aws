@@ -100,6 +100,41 @@ func ReadLastSync() (*LastSync, error) {
 	return &ls, nil
 }
 
+func CacheSyncedAt(keys ...string) *time.Time {
+	if len(keys) == 0 {
+		return nil
+	}
+	query := `SELECT MAX(synced_at) FROM cache WHERE key IN (?` + repeatParam(len(keys)-1) + `)`
+	args := make([]interface{}, len(keys))
+	for i, k := range keys {
+		args[i] = k
+	}
+	var raw *string
+	if err := db.QueryRow(query, args...).Scan(&raw); err != nil || raw == nil {
+		return nil
+	}
+	// SQLite stores as "2006-01-02 15:04:05.999999-07:00"
+	for _, layout := range []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.Parse(layout, *raw); err == nil {
+			return &t
+		}
+	}
+	return nil
+}
+
+func repeatParam(n int) string {
+	s := ""
+	for i := 0; i < n; i++ {
+		s += ",?"
+	}
+	return s
+}
+
 // --- Region settings ---
 
 func SetRegions(regions []string) error {

@@ -67,6 +67,12 @@ header h1 span { color: var(--accent); }
 #region-select:hover { border-color: var(--accent); }
 #region-select:focus { border-color: var(--accent); }
 
+.synced-at-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .icon-btn {
   background: none;
   border: 1px solid var(--border);
@@ -416,6 +422,9 @@ main {
 .resource-icon-ath   { background: #0284c7; }
 .resource-icon-glue  { background: #0d9488; }
 .resource-icon-sng   { background: #6366f1; }
+.resource-icon-ec2   { background: #ea580c; }
+.resource-icon-ecs   { background: #f97316; }
+.resource-icon-lambda { background: #d97706; }
 
 .resource-name {
   font-weight: 500;
@@ -517,6 +526,14 @@ code {
 .tag-s3-private { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 .tag-s3-public { background: rgba(231, 76, 60, 0.15); color: var(--red); }
 .tag-s3-unknown { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
+.tag-running { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.tag-stopped { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
+.tag-terminated { background: rgba(231, 76, 60, 0.15); color: var(--red); }
+.tag-Active { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.tag-Inactive { background: rgba(139, 144, 160, 0.15); color: var(--text-dim); }
+.tag-Pending { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
+.tag-Failed { background: rgba(231, 76, 60, 0.15); color: var(--red); }
+.tag-fargate { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
 
 .sg-rules {
   font-size: 11px;
