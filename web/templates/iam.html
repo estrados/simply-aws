@@ -1,5 +1,119 @@
 {{define "iam-panel"}}
 <div id="iam-content">
-  <div class="empty-state">IAM resources coming soon.</div>
+  {{template "iam-content" .}}
 </div>
+{{end}}
+
+{{define "iam-content"}}
+{{if not (hasIAMData .IAM)}}
+  <div class="empty-state">No IAM resources cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{if .IAM.Roles}}
+  {{range groupRolesByPrincipal .IAM.Roles}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="resource-icon resource-icon-principal">{{principalIcon .Principal}}</span>
+        <span class="vpc-name">{{principalLabel .Principal}}</span>
+      </div>
+      <div class="vpc-meta">
+        <code>{{.Principal}}</code>
+        <span class="count-badge">{{len .Roles}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Roles}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/iam-role/{{.RoleName}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-role">ROLE</span>
+          {{if .IsServiceLinked}}<span class="tag tag-service-linked">service-linked</span>{{end}}
+          <span class="resource-name">{{.RoleName}}</span>
+        </div>
+        <div class="rt-subnets">
+          {{if .TrustPolicy}}
+          <div class="nested-section-label">Trust Policy</div>
+          {{range .TrustPolicy}}
+          <div class="resource-row">
+            <span class="tag tag-{{.Effect}}">{{.Effect}}</span>
+            <span class="resource-name">{{.Action}}</span>
+            <span class="resource-detail">{{.Principal}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .AttachedPolicies}}
+          <div class="nested-section-label">Policies</div>
+          {{range .AttachedPolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .InlinePolicies}}
+          <div class="nested-section-label">Inline Policies</div>
+          {{range .InlinePolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+            <span class="tag tag-isolated">inline</span>
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+
+  {{if .IAM.Groups}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">Groups</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .IAM.Groups}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .IAM.Groups}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/iam-group/{{.GroupName}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-grp">GRP</span>
+          <span class="resource-name">{{.GroupName}}</span>
+          <code class="resource-id">{{.GroupId}}</code>
+        </div>
+        <div class="rt-subnets">
+          {{if .AttachedPolicies}}
+          <div class="nested-section-label">Policies</div>
+          {{range .AttachedPolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .InlinePolicies}}
+          <div class="nested-section-label">Inline Policies</div>
+          {{range .InlinePolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+            <span class="tag tag-isolated">inline</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .Members}}
+          <div class="nested-section-label">Members</div>
+          {{range .Members}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+{{end}}
 {{end}}

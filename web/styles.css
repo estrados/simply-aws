@@ -425,6 +425,9 @@ main {
 .resource-icon-ec2   { background: #ea580c; }
 .resource-icon-ecs   { background: #f97316; }
 .resource-icon-lambda { background: #d97706; }
+.resource-icon-role      { background: #8b5cf6; }
+.resource-icon-grp       { background: #14b8a6; }
+.resource-icon-principal { background: #f59e0b; }
 
 .resource-name {
   font-weight: 500;
@@ -534,6 +537,9 @@ code {
 .tag-Pending { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
 .tag-Failed { background: rgba(231, 76, 60, 0.15); color: var(--red); }
 .tag-fargate { background: rgba(14, 165, 233, 0.15); color: #0ea5e9; }
+.tag-Allow { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.tag-Deny { background: rgba(231, 76, 60, 0.15); color: var(--red); }
+.tag-service-linked { background: rgba(139, 144, 160, 0.1); color: var(--text-dim); font-size: 10px; }
 
 .sg-rules {
   font-size: 11px;
@@ -599,6 +605,13 @@ code {
   font-size: 11px;
   font-family: "SF Mono", Menlo, monospace;
 }
+a.endpoint-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+a.endpoint-link:hover {
+  color: var(--accent-hover);
+}
 
 .rt-no-subnets {
   padding: 6px 0 14px 28px;
@@ -635,6 +648,51 @@ code {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sync split button */
+.sync-split {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.sync-chevron {
+  padding: 6px 4px;
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.sync-split > #sync-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.sync-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  z-index: 50;
+  min-width: 120px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.sync-split.open .sync-dropdown { display: block; }
+.sync-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.sync-dropdown-item:hover { background: var(--surface2); }
 
 /* Clickable resources */
 .clickable { cursor: pointer; transition: background 0.1s; }

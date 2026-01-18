@@ -24,6 +24,8 @@
 <div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/lightsail/" target="_blank">Lightsail</a>, <a href="https://aws.amazon.com/apprunner/" target="_blank">App Runner</a>, <a href="https://aws.amazon.com/elasticbeanstalk/" target="_blank">Elastic Beanstalk</a>, <a href="https://aws.amazon.com/batch/" target="_blank">Batch</a>, <a href="https://aws.amazon.com/eks/" target="_blank">EKS</a>.</div>
 {{else if eq .Tab "s3"}}
 <div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/opensearch-service/" target="_blank">OpenSearch</a>, <a href="https://aws.amazon.com/emr/" target="_blank">EMR</a>, <a href="https://aws.amazon.com/lake-formation/" target="_blank">Lake Formation</a>.</div>
+{{else if eq .Tab "iam"}}
+<div class="tab-desc-dim"><span class="not-yet-label">Not yet:</span> <a href="https://aws.amazon.com/iam/identity-center/" target="_blank">Identity Center</a>, <a href="https://aws.amazon.com/organizations/" target="_blank">Organizations</a>, <a href="https://aws.amazon.com/iam/access-analyzer/" target="_blank">Access Analyzer</a>, <a href="https://aws.amazon.com/certificate-manager/" target="_blank">Certificate Manager</a>.</div>
 {{end}}
 {{if eq .Tab "net"}}
   {{template "vpc-panel" .}}

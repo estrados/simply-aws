@@ -33,6 +33,7 @@ func Start(addr string, status awscli.Status) error {
 		"S3": "resource-icon-s3", "RS": "resource-icon-rs", "ATH": "resource-icon-ath",
 		"GLUE": "resource-icon-glue", "SNG": "resource-icon-sng",
 		"EC2": "resource-icon-ec2", "ECS": "resource-icon-ecs", "LN": "resource-icon-lambda",
+		"ROLE": "resource-icon-role", "GRP": "resource-icon-grp",
 	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
@@ -57,6 +58,121 @@ func Start(addr string, status awscli.Status) error {
 		},
 		"hasComputeData": func(v *sawsSync.ComputeData) bool {
 			return v != nil && (len(v.EC2) > 0 || len(v.ECS) > 0 || len(v.Lambda) > 0)
+		},
+		"hasIAMData": func(v *sawsSync.IAMData) bool {
+			return v != nil && (len(v.Roles) > 0 || len(v.Groups) > 0)
+		},
+		"principalLabel": func(principal string) string {
+			// *.amazonaws.com → extract service name
+			if strings.HasSuffix(principal, ".amazonaws.com") {
+				svc := strings.TrimSuffix(principal, ".amazonaws.com")
+				labels := map[string]string{
+					"ec2":                "EC2",
+					"lambda":             "Lambda",
+					"ecs":                "ECS",
+					"ecs-tasks":          "ECS Tasks",
+					"elasticbeanstalk":   "Elastic Beanstalk",
+					"elasticloadbalancing": "ELB",
+					"rds":                "RDS",
+					"s3":                 "S3",
+					"dynamodb":           "DynamoDB",
+					"cloudformation":     "CloudFormation",
+					"apigateway":         "API Gateway",
+					"events":             "EventBridge",
+					"states":             "Step Functions",
+					"sns":                "SNS",
+					"sqs":                "SQS",
+					"logs":               "CloudWatch Logs",
+					"monitoring":         "CloudWatch",
+					"cloudfront":         "CloudFront",
+					"codebuild":          "CodeBuild",
+					"codepipeline":       "CodePipeline",
+					"codedeploy":         "CodeDeploy",
+					"ssm":                "Systems Manager",
+					"config":             "Config",
+					"guardduty":          "GuardDuty",
+					"access-analyzer":    "Access Analyzer",
+					"firehose":           "Firehose",
+					"kinesis":            "Kinesis",
+					"glue":               "Glue",
+					"athena":             "Athena",
+					"redshift":           "Redshift",
+					"sagemaker":          "SageMaker",
+					"bedrock":            "Bedrock",
+					"eks":                "EKS",
+					"ecr":                "ECR",
+					"elasticache":        "ElastiCache",
+					"autoscaling":        "Auto Scaling",
+					"application-autoscaling": "App Auto Scaling",
+					"cognito-idp":        "Cognito",
+					"secretsmanager":     "Secrets Manager",
+					"kms":                "KMS",
+					"cloudtrail":         "CloudTrail",
+					"waf":                "WAF",
+					"route53":            "Route 53",
+					"ses":                "SES",
+					"batch":              "Batch",
+					"backup":             "Backup",
+					"transfer":           "Transfer Family",
+					"spotfleet":          "Spot Fleet",
+					"ops.apigateway":     "API Gateway Ops",
+					"edgelambda":         "Lambda@Edge",
+				}
+				if label, ok := labels[svc]; ok {
+					return label
+				}
+				// Capitalize first letter as fallback
+				if len(svc) > 0 {
+					return strings.ToUpper(svc[:1]) + svc[1:]
+				}
+				return svc
+			}
+			// ARN-based principals
+			if strings.HasPrefix(principal, "arn:aws:iam:") {
+				if strings.HasSuffix(principal, ":root") {
+					// arn:aws:iam::123456:root
+					parts := strings.Split(principal, ":")
+					if len(parts) >= 5 {
+						return "Account " + parts[4]
+					}
+				}
+				return "IAM"
+			}
+			if principal == "*" {
+				return "Any"
+			}
+			return principal
+		},
+		"principalIcon": func(principal string) string {
+			if strings.HasSuffix(principal, ".amazonaws.com") {
+				return "AWS"
+			}
+			if strings.HasPrefix(principal, "arn:aws:iam:") {
+				return "IAM"
+			}
+			if principal == "*" {
+				return "*"
+			}
+			return "?"
+		},
+		"groupRolesByPrincipal": func(roles []sawsSync.IAMRole) []iamRoleGroup {
+			order := []string{}
+			groups := map[string][]sawsSync.IAMRole{}
+			for _, r := range roles {
+				principal := "Other"
+				if len(r.TrustPolicy) > 0 {
+					principal = r.TrustPolicy[0].Principal
+				}
+				if _, exists := groups[principal]; !exists {
+					order = append(order, principal)
+				}
+				groups[principal] = append(groups[principal], r)
+			}
+			var result []iamRoleGroup
+			for _, p := range order {
+				result = append(result, iamRoleGroup{Principal: p, Roles: groups[p]})
+			}
+			return result
 		},
 		"hasFargate": func(providers []string) bool {
 			for _, p := range providers {
@@ -215,6 +331,8 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/sync/s3", handleSyncS3)
 	mux.HandleFunc("/sync/database", handleSyncDatabase)
 	mux.HandleFunc("/sync/compute", handleSyncCompute)
+	mux.HandleFunc("/sync/iam", handleSyncIAM)
+	mux.HandleFunc("/sync/all", handleSyncAll)
 	mux.HandleFunc("/detail/", handleDetail)
 
 	// JSON APIs (kept for sync/templates)
@@ -239,6 +357,7 @@ type pageData struct {
 	DW             *sawsSync.DataWarehouseData
 	DB             *sawsSync.DatabaseData
 	Compute        *sawsSync.ComputeData
+	IAM            *sawsSync.IAMData
 	SyncedAt       string
 }
 
@@ -319,6 +438,9 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 		data.S3 = s3Data
 		dwData, _ := sawsSync.LoadDataWarehouseData(region)
 		data.DW = dwData
+	case "iam":
+		iamData, _ := sawsSync.LoadIAMData()
+		data.IAM = iamData
 	}
 	data.SyncedAt = syncedAtForTab(tab, region)
 
@@ -434,6 +556,61 @@ func handleSyncCompute(w http.ResponseWriter, r *http.Request) {
 	writeSyncedAtOOB(w, "compute", region)
 }
 
+func handleSyncIAM(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	sawsSync.SyncIAMData()
+	iamData, _ := sawsSync.LoadIAMData()
+	data := newPageData()
+	data.IAM = iamData
+	tmpl.ExecuteTemplate(w, "iam-content", data)
+	writeSyncedAtOOB(w, "iam", "")
+}
+
+func handleSyncAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	tab := r.FormValue("tab")
+
+	sawsSync.SyncVPCData(region)
+	sawsSync.SyncS3WithRegions()
+	sawsSync.SyncDatabaseData(region)
+	sawsSync.SyncComputeData(region)
+	sawsSync.SyncDataWarehouseData(region)
+	sawsSync.SyncIAMData()
+
+	data := newPageData()
+	data.CurrentRegion = region
+	data.Region = region
+	data.Tab = tab
+
+	switch tab {
+	case "net":
+		data.VPC, _ = sawsSync.LoadVPCData(region)
+	case "database":
+		data.DB, _ = sawsSync.LoadDatabaseData(region)
+	case "compute":
+		data.Compute, _ = sawsSync.LoadComputeData(region)
+	case "s3":
+		data.S3, _ = sawsSync.LoadS3DataEnriched()
+		data.DW, _ = sawsSync.LoadDataWarehouseData(region)
+	case "iam":
+		data.IAM, _ = sawsSync.LoadIAMData()
+	}
+	data.SyncedAt = syncedAtForTab(tab, region)
+
+	tmpl.ExecuteTemplate(w, "content", data)
+}
+
 type detailData struct {
 	Type          string
 	Title         string
@@ -449,6 +626,12 @@ type detailField struct {
 	Label string
 	Value string
 }
+
+type iamRoleGroup struct {
+	Principal string
+	Roles     []sawsSync.IAMRole
+}
+
 
 // GET /detail/{type}/{id}?region=xxx
 func handleDetail(w http.ResponseWriter, r *http.Request) {
@@ -639,6 +822,9 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 							detailField{"Block Public Policy", boolStr(pab.BlockPublicPolicy)},
 							detailField{"Restrict Public Buckets", boolStr(pab.RestrictPublicBuckets)},
 						)
+					}
+					for _, pol := range b.Policies {
+						fields = append(fields, detailField{pol.Effect + " " + pol.Sid, pol.Action + " (" + pol.Principal + ")"})
 					}
 					detail = detailData{
 						Type:   "S3",
@@ -918,6 +1104,12 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 						{"Code Size", formatBytes(fn.CodeSize)},
 						{"Last Modified", fn.LastModified},
 					}
+					if fn.FunctionUrl != "" {
+						fields = append(fields, detailField{"Function URL", fn.FunctionUrl})
+					}
+					for _, pol := range fn.Policies {
+						fields = append(fields, detailField{pol.Effect + " " + pol.Sid, pol.Action + " (" + pol.Principal + ")"})
+					}
 					if fn.VpcId != "" {
 						fields = append(fields, detailField{"VPC ID", fn.VpcId})
 						if len(fn.SubnetIds) > 0 {
@@ -931,6 +1123,79 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 						Type:   "LN",
 						Title:  fn.FunctionName,
 						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "iam-role":
+		iamData, _ := sawsSync.LoadIAMData()
+		if iamData != nil {
+			for _, role := range iamData.Roles {
+				if role.RoleName == resId {
+					policies := "—"
+					if len(role.AttachedPolicies) > 0 {
+						policies = strings.Join(role.AttachedPolicies, ", ")
+					}
+					inline := "—"
+					if len(role.InlinePolicies) > 0 {
+						inline = strings.Join(role.InlinePolicies, ", ")
+					}
+					fields := []detailField{
+						{"Role Name", role.RoleName},
+						{"Role ID", role.RoleId},
+						{"ARN", role.Arn},
+						{"Created", role.CreateDate},
+					}
+					if role.Description != "" {
+						fields = append(fields, detailField{"Description", role.Description})
+					}
+					fields = append(fields,
+						detailField{"Service Linked", boolStr(role.IsServiceLinked)},
+						detailField{"Attached Policies", policies},
+						detailField{"Inline Policies", inline},
+					)
+					for _, tp := range role.TrustPolicy {
+						fields = append(fields, detailField{tp.Effect + " " + tp.Sid, tp.Action + " (" + tp.Principal + ")"})
+					}
+					detail = detailData{
+						Type:   "ROLE",
+						Title:  role.RoleName,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "iam-group":
+		iamData, _ := sawsSync.LoadIAMData()
+		if iamData != nil {
+			for _, g := range iamData.Groups {
+				if g.GroupName == resId {
+					policies := "—"
+					if len(g.AttachedPolicies) > 0 {
+						policies = strings.Join(g.AttachedPolicies, ", ")
+					}
+					inline := "—"
+					if len(g.InlinePolicies) > 0 {
+						inline = strings.Join(g.InlinePolicies, ", ")
+					}
+					members := "—"
+					if len(g.Members) > 0 {
+						members = strings.Join(g.Members, ", ")
+					}
+					detail = detailData{
+						Type:  "GRP",
+						Title: g.GroupName,
+						Fields: []detailField{
+							{"Group Name", g.GroupName},
+							{"Group ID", g.GroupId},
+							{"ARN", g.Arn},
+							{"Created", g.CreateDate},
+							{"Attached Policies", policies},
+							{"Inline Policies", inline},
+							{"Members", members},
+						},
 					}
 					break
 				}
@@ -1075,6 +1340,8 @@ func syncedAtForTab(tab, region string) string {
 		keys = []string{region + ":rds", region + ":dynamodb", region + ":elasticache-enriched"}
 	case "s3":
 		keys = []string{"s3", "s3:enriched", region + ":redshift", region + ":athena"}
+	case "iam":
+		keys = []string{"iam:enriched"}
 	}
 	if len(keys) == 0 {
 		return ""
