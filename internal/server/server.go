@@ -34,6 +34,8 @@ func Start(addr string, status awscli.Status) error {
 		"GLUE": "resource-icon-glue", "SNG": "resource-icon-sng",
 		"EC2": "resource-icon-ec2", "ECS": "resource-icon-ecs", "LN": "resource-icon-lambda",
 		"ROLE": "resource-icon-role", "GRP": "resource-icon-grp",
+		"SQS": "resource-icon-sqs", "SNS": "resource-icon-sns",
+		"KIN": "resource-icon-kinesis", "EB": "resource-icon-eb",
 	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
@@ -61,6 +63,9 @@ func Start(addr string, status awscli.Status) error {
 		},
 		"hasIAMData": func(v *sawsSync.IAMData) bool {
 			return v != nil && (len(v.Roles) > 0 || len(v.Groups) > 0)
+		},
+		"hasStreamingData": func(v *sawsSync.StreamingData) bool {
+			return v != nil && (len(v.SQS) > 0 || len(v.SNS) > 0 || len(v.Kinesis) > 0 || len(v.EventBridge) > 0)
 		},
 		"principalLabel": func(principal string) string {
 			// *.amazonaws.com → extract service name
@@ -332,6 +337,7 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/sync/database", handleSyncDatabase)
 	mux.HandleFunc("/sync/compute", handleSyncCompute)
 	mux.HandleFunc("/sync/iam", handleSyncIAM)
+	mux.HandleFunc("/sync/streaming", handleSyncStreaming)
 	mux.HandleFunc("/sync/all", handleSyncAll)
 	mux.HandleFunc("/detail/", handleDetail)
 
@@ -358,6 +364,7 @@ type pageData struct {
 	DB             *sawsSync.DatabaseData
 	Compute        *sawsSync.ComputeData
 	IAM            *sawsSync.IAMData
+	Streaming      *sawsSync.StreamingData
 	SyncedAt       string
 }
 
@@ -441,6 +448,9 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	case "iam":
 		iamData, _ := sawsSync.LoadIAMData()
 		data.IAM = iamData
+	case "streaming":
+		streamData, _ := sawsSync.LoadStreamingData(region)
+		data.Streaming = streamData
 	}
 	data.SyncedAt = syncedAtForTab(tab, region)
 
@@ -569,6 +579,25 @@ func handleSyncIAM(w http.ResponseWriter, r *http.Request) {
 	writeSyncedAtOOB(w, "iam", "")
 }
 
+func handleSyncStreaming(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	sawsSync.SyncStreamingData(region)
+	streamData, _ := sawsSync.LoadStreamingData(region)
+	data := newPageData()
+	data.Region = region
+	data.Streaming = streamData
+	tmpl.ExecuteTemplate(w, "streaming-content", data)
+	writeSyncedAtOOB(w, "streaming", region)
+}
+
 func handleSyncAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
@@ -586,6 +615,7 @@ func handleSyncAll(w http.ResponseWriter, r *http.Request) {
 	sawsSync.SyncDatabaseData(region)
 	sawsSync.SyncComputeData(region)
 	sawsSync.SyncDataWarehouseData(region)
+	sawsSync.SyncStreamingData(region)
 	sawsSync.SyncIAMData()
 
 	data := newPageData()
@@ -605,6 +635,8 @@ func handleSyncAll(w http.ResponseWriter, r *http.Request) {
 		data.DW, _ = sawsSync.LoadDataWarehouseData(region)
 	case "iam":
 		data.IAM, _ = sawsSync.LoadIAMData()
+	case "streaming":
+		data.Streaming, _ = sawsSync.LoadStreamingData(region)
 	}
 	data.SyncedAt = syncedAtForTab(tab, region)
 
@@ -1128,6 +1160,108 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	case "sqs":
+		streamData, _ := sawsSync.LoadStreamingData(r.URL.Query().Get("region"))
+		if streamData != nil {
+			for _, q := range streamData.SQS {
+				if q.QueueName == resId {
+					fields := []detailField{
+						{"Queue Name", q.QueueName},
+						{"ARN", q.Arn},
+						{"URL", q.QueueUrl},
+						{"Messages", q.ApproximateMessages},
+						{"In Flight", q.ApproximateMessagesNotVisible},
+						{"Delay", q.DelaySeconds + "s"},
+						{"Retention", q.MessageRetention + "s"},
+						{"Visibility Timeout", q.VisibilityTimeout + "s"},
+						{"Max Message Size", q.MaxMessageSize},
+						{"FIFO", boolStr(q.IsFIFO)},
+						{"Created", q.CreatedTimestamp},
+					}
+					if q.RedrivePolicy != "" {
+						fields = append(fields, detailField{"Dead Letter Queue", q.RedrivePolicy})
+					}
+					for _, pol := range q.Policies {
+						fields = append(fields, detailField{pol.Effect + " " + pol.Sid, pol.Action + " (" + pol.Principal + ")"})
+					}
+					detail = detailData{
+						Type:   "SQS",
+						Title:  q.QueueName,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "sns":
+		streamData, _ := sawsSync.LoadStreamingData(r.URL.Query().Get("region"))
+		if streamData != nil {
+			for _, t := range streamData.SNS {
+				if t.Name == resId {
+					displayName := t.DisplayName
+					if displayName == "" {
+						displayName = "—"
+					}
+					fields := []detailField{
+						{"Topic Name", t.Name},
+						{"ARN", t.TopicArn},
+						{"Display Name", displayName},
+						{"Subscriptions", fmt.Sprintf("%d", t.Subscriptions)},
+					}
+					for _, pol := range t.Policies {
+						fields = append(fields, detailField{pol.Effect + " " + pol.Sid, pol.Action + " (" + pol.Principal + ")"})
+					}
+					detail = detailData{
+						Type:   "SNS",
+						Title:  t.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "kinesis":
+		streamData, _ := sawsSync.LoadStreamingData(r.URL.Query().Get("region"))
+		if streamData != nil {
+			for _, s := range streamData.Kinesis {
+				if s.StreamName == resId {
+					detail = detailData{
+						Type:  "KIN",
+						Title: s.StreamName,
+						Fields: []detailField{
+							{"Stream Name", s.StreamName},
+							{"ARN", s.StreamARN},
+							{"Status", s.StreamStatus},
+							{"Mode", s.StreamMode},
+							{"Open Shards", fmt.Sprintf("%d", s.ShardCount)},
+							{"Retention", fmt.Sprintf("%d hours", s.Retention)},
+							{"Encryption", s.Encryption},
+							{"Created", s.CreatedAt},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "eventbridge":
+		streamData, _ := sawsSync.LoadStreamingData(r.URL.Query().Get("region"))
+		if streamData != nil {
+			for _, b := range streamData.EventBridge {
+				if b.Name == resId {
+					fields := []detailField{
+						{"Bus Name", b.Name},
+						{"ARN", b.Arn},
+						{"Rules", fmt.Sprintf("%d", len(b.Rules))},
+					}
+					detail = detailData{
+						Type:   "EB",
+						Title:  b.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
 	case "iam-role":
 		iamData, _ := sawsSync.LoadIAMData()
 		if iamData != nil {
@@ -1342,6 +1476,8 @@ func syncedAtForTab(tab, region string) string {
 		keys = []string{"s3", "s3:enriched", region + ":redshift", region + ":athena"}
 	case "iam":
 		keys = []string{"iam:enriched"}
+	case "streaming":
+		keys = []string{region + ":streaming-enriched"}
 	}
 	if len(keys) == 0 {
 		return ""

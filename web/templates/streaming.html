@@ -1,5 +1,163 @@
 {{define "streaming-panel"}}
 <div id="streaming-content">
-  <div class="empty-state">Queues & streaming resources coming soon.</div>
+  {{template "streaming-content" .}}
 </div>
+{{end}}
+
+{{define "streaming-content"}}
+{{if not (hasStreamingData .Streaming)}}
+  <div class="empty-state">No queues or streaming resources cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{if .Streaming.SQS}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">SQS Queues</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Streaming.SQS}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Streaming.SQS}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/sqs/{{.QueueName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-sqs">SQS</span>
+          {{if .IsFIFO}}<span class="tag tag-fifo">FIFO</span>{{end}}
+          <span class="resource-name">{{.QueueName}}</span>
+          <span class="resource-detail">{{.ApproximateMessages}} msgs</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">{{.ApproximateMessagesNotVisible}} in flight · {{.DelaySeconds}}s delay · {{.MessageRetention}}s retention</span>
+            </div>
+          </div>
+          {{if .Policies}}
+          <div class="nested-section-label">Permissions</div>
+          {{range .Policies}}
+          <div class="resource-row">
+            <span class="tag tag-{{.Effect}}">{{.Effect}}</span>
+            <span class="resource-name">{{.Action}}</span>
+            <span class="resource-detail">{{.Principal}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .RedrivePolicy}}
+          <div class="nested-section-label">Dead Letter Queue</div>
+          <div class="resource-row">
+            <span class="resource-detail">{{.RedrivePolicy}}</span>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Streaming.SNS}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">SNS Topics</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Streaming.SNS}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Streaming.SNS}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/sns/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-sns">SNS</span>
+          <span class="resource-name">{{.Name}}</span>
+          <span class="resource-detail">{{.Subscriptions}} subscriptions</span>
+        </div>
+        <div class="rt-subnets">
+          {{if .Policies}}
+          <div class="nested-section-label">Permissions</div>
+          {{range .Policies}}
+          <div class="resource-row">
+            <span class="tag tag-{{.Effect}}">{{.Effect}}</span>
+            <span class="resource-name">{{.Action}}</span>
+            <span class="resource-detail">{{.Principal}}</span>
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Streaming.Kinesis}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">Kinesis Streams</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Streaming.Kinesis}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Streaming.Kinesis}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/kinesis/{{.StreamName}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-kinesis">KIN</span>
+          <span class="tag tag-{{.StreamStatus}}">{{.StreamStatus}}</span>
+          <span class="resource-name">{{.StreamName}}</span>
+          <span class="resource-detail">{{.ShardCount}} shards · {{.Retention}}h retention</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">{{.StreamMode}} · {{.Encryption}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Streaming.EventBridge}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">EventBridge Buses</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .Streaming.EventBridge}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .Streaming.EventBridge}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/eventbridge/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-eb">EB</span>
+          <span class="resource-name">{{.Name}}</span>
+          <span class="resource-detail">{{len .Rules}} rules</span>
+        </div>
+        {{if .Rules}}
+        <div class="rt-subnets">
+          <div class="nested-section-label">Rules</div>
+          {{range .Rules}}
+          <div class="resource-row">
+            <span class="tag tag-{{.State}}">{{.State}}</span>
+            <span class="resource-name">{{.Name}}</span>
+            {{if .Schedule}}<span class="resource-detail">{{.Schedule}}</span>{{end}}
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+{{end}}
 {{end}}

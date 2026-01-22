@@ -14,8 +14,8 @@
       <span id="synced-at-label" class="synced-at-label">{{.SyncedAt}}</span>
       <div class="sync-split">
         <button class="icon-btn" id="sync-btn"
-          hx-post="{{if eq .Tab "compute"}}/sync/compute{{else if eq .Tab "s3"}}/sync/s3{{else if eq .Tab "database"}}/sync/database{{else if eq .Tab "iam"}}/sync/iam{{else if eq .Tab "net"}}/sync/vpc{{else}}/sync/all{{end}}"
-          hx-target="{{if eq .Tab "compute"}}#compute-content{{else if eq .Tab "s3"}}#s3-content{{else if eq .Tab "database"}}#database-content{{else if eq .Tab "iam"}}#iam-content{{else if eq .Tab "net"}}#vpc-content{{else}}#app{{end}}"
+          hx-post="{{if eq .Tab "compute"}}/sync/compute{{else if eq .Tab "s3"}}/sync/s3{{else if eq .Tab "database"}}/sync/database{{else if eq .Tab "iam"}}/sync/iam{{else if eq .Tab "streaming"}}/sync/streaming{{else if eq .Tab "net"}}/sync/vpc{{else}}/sync/all{{end}}"
+          hx-target="{{if eq .Tab "compute"}}#compute-content{{else if eq .Tab "s3"}}#s3-content{{else if eq .Tab "database"}}#database-content{{else if eq .Tab "iam"}}#iam-content{{else if eq .Tab "streaming"}}#streaming-content{{else if eq .Tab "net"}}#vpc-content{{else}}#app{{end}}"
           hx-swap="innerHTML"
           hx-vals='{"region":"{{.CurrentRegion}}","tab":"{{.Tab}}"}'
           hx-indicator="#sync-btn"

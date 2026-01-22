@@ -428,6 +428,10 @@ main {
 .resource-icon-role      { background: #8b5cf6; }
 .resource-icon-grp       { background: #14b8a6; }
 .resource-icon-principal { background: #f59e0b; }
+.resource-icon-sqs       { background: #d946ef; }
+.resource-icon-sns       { background: #e11d48; }
+.resource-icon-kinesis   { background: #0ea5e9; }
+.resource-icon-eb        { background: #e85d04; }
 
 .resource-name {
   font-weight: 500;
@@ -540,6 +544,8 @@ code {
 .tag-Allow { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 .tag-Deny { background: rgba(231, 76, 60, 0.15); color: var(--red); }
 .tag-service-linked { background: rgba(139, 144, 160, 0.1); color: var(--text-dim); font-size: 10px; }
+.tag-fifo { background: rgba(217, 70, 239, 0.15); color: #d946ef; }
+.tag-ACTIVE { background: rgba(46, 204, 113, 0.15); color: var(--green); }
 
 .sg-rules {
   font-size: 11px;
