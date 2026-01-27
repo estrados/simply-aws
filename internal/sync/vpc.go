@@ -9,6 +9,8 @@ type VPCData struct {
 	NATGWs         []NATGW         `json:"natGws"`
 	RouteTables    []RouteTable    `json:"routeTables"`
 	SecurityGroups []SecurityGroup `json:"securityGroups"`
+	LoadBalancers  []LoadBalancer  `json:"loadBalancers"`
+	TargetGroups   []TargetGroup   `json:"targetGroups"`
 }
 
 type VPC struct {
@@ -69,6 +71,29 @@ type SecurityGroup struct {
 	Name        string   `json:"Name"`
 }
 
+type LoadBalancer struct {
+	Name           string   `json:"Name"`
+	Arn            string   `json:"Arn"`
+	DNSName        string   `json:"DNSName"`
+	Type           string   `json:"Type"`
+	Scheme         string   `json:"Scheme"`
+	State          string   `json:"State"`
+	VpcId          string   `json:"VpcId"`
+	AvailZones     []string `json:"AvailZones"`
+	SecurityGroups []string `json:"SecurityGroups"`
+}
+
+type TargetGroup struct {
+	Name            string `json:"Name"`
+	Arn             string `json:"Arn"`
+	Protocol        string `json:"Protocol"`
+	Port            int    `json:"Port"`
+	TargetType      string `json:"TargetType"`
+	VpcId           string `json:"VpcId"`
+	HealthCheckPath string `json:"HealthCheckPath"`
+	LoadBalancerArn string `json:"LoadBalancerArn"`
+}
+
 func LoadVPCData(region string) (*VPCData, error) {
 	data := &VPCData{}
 
@@ -118,6 +143,14 @@ func LoadVPCData(region string) (*VPCData, error) {
 		for _, s := range resp.SecurityGroups {
 			data.SecurityGroups = append(data.SecurityGroups, parseSG(s))
 		}
+	}
+
+	if raw, err := ReadCache(region + ":load-balancers"); err == nil && raw != nil {
+		json.Unmarshal(raw, &data.LoadBalancers)
+	}
+
+	if raw, err := ReadCache(region + ":target-groups"); err == nil && raw != nil {
+		json.Unmarshal(raw, &data.TargetGroups)
 	}
 
 	return data, nil
@@ -224,5 +257,68 @@ func parseSG(raw json.RawMessage) SecurityGroup {
 		InboundCount:  len(sg.IpPermissions),
 		OutboundCount: len(sg.IpPermissionsEgress),
 		Name:          tagName(raw),
+	}
+}
+
+func parseLB(raw json.RawMessage) LoadBalancer {
+	var lb struct {
+		LoadBalancerName string `json:"LoadBalancerName"`
+		LoadBalancerArn  string `json:"LoadBalancerArn"`
+		DNSName          string `json:"DNSName"`
+		Type             string `json:"Type"`
+		Scheme           string `json:"Scheme"`
+		VpcId            string `json:"VpcId"`
+		State            struct {
+			Code string `json:"Code"`
+		} `json:"State"`
+		AvailabilityZones []struct {
+			ZoneName string `json:"ZoneName"`
+		} `json:"AvailabilityZones"`
+		SecurityGroups []string `json:"SecurityGroups"`
+	}
+	json.Unmarshal(raw, &lb)
+
+	result := LoadBalancer{
+		Name:           lb.LoadBalancerName,
+		Arn:            lb.LoadBalancerArn,
+		DNSName:        lb.DNSName,
+		Type:           lb.Type,
+		Scheme:         lb.Scheme,
+		State:          lb.State.Code,
+		VpcId:          lb.VpcId,
+		SecurityGroups: lb.SecurityGroups,
+	}
+	for _, az := range lb.AvailabilityZones {
+		result.AvailZones = append(result.AvailZones, az.ZoneName)
+	}
+	return result
+}
+
+func parseTG(raw json.RawMessage) TargetGroup {
+	var tg struct {
+		TargetGroupName string   `json:"TargetGroupName"`
+		TargetGroupArn  string   `json:"TargetGroupArn"`
+		Protocol        string   `json:"Protocol"`
+		Port            int      `json:"Port"`
+		TargetType      string   `json:"TargetType"`
+		VpcId           string   `json:"VpcId"`
+		HealthCheckPath string   `json:"HealthCheckPath"`
+		LoadBalancerArns []string `json:"LoadBalancerArns"`
+	}
+	json.Unmarshal(raw, &tg)
+
+	lbArn := ""
+	if len(tg.LoadBalancerArns) > 0 {
+		lbArn = tg.LoadBalancerArns[0]
+	}
+	return TargetGroup{
+		Name:            tg.TargetGroupName,
+		Arn:             tg.TargetGroupArn,
+		Protocol:        tg.Protocol,
+		Port:            tg.Port,
+		TargetType:      tg.TargetType,
+		VpcId:           tg.VpcId,
+		HealthCheckPath: tg.HealthCheckPath,
+		LoadBalancerArn: lbArn,
 	}
 }

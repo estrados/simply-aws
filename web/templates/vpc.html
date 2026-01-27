@@ -16,6 +16,7 @@
   {{$natgws := natgwsFor .VpcId $vpc}}
   {{$rts := routeTablesFor .VpcId $vpc}}
   {{$sgs := sgsFor .VpcId $vpc}}
+  {{$lbs := lbsFor .VpcId $vpc}}
 
   <div class="vpc-card">
     <div class="vpc-header clickable" hx-get="/detail/vpc/{{.VpcId}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
@@ -70,6 +71,45 @@
         </div>
         {{end}}
       </div>
+      {{end}}
+
+      {{if $lbs}}
+      {{range $lbs}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/lb/{{.Name}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon {{lbIconClass .Type}}">{{lbIcon .Type}}</span>
+          <span class="tag tag-{{.State}}">{{.State}}</span>
+          <span class="tag tag-{{.Scheme}}">{{.Scheme}}</span>
+          <span class="resource-name">{{.Name}}</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="nested-section-label">DNS</div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><code class="endpoint-value">{{.DNSName}}</code></div>
+          </div>
+          {{$tgs := tgsForLB .Arn $vpc}}
+          {{if $tgs}}
+          <div class="nested-section-label">Target Groups</div>
+          {{range $tgs}}
+          <div class="resource-row clickable" hx-get="/detail/tg/{{.Name}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-tg">TG</span>
+            <span class="resource-name">{{.Name}}</span>
+            <span class="resource-detail">{{.Protocol}}:{{.Port}} · {{.TargetType}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
       {{end}}
 
       {{if $rts}}

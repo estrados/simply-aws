@@ -52,6 +52,20 @@
           </div>
           {{end}}
           {{end}}
+          {{if .IamRole}}
+          <div class="nested-section-label">IAM Role</div>
+          <div class="resource-row clickable" hx-get="/detail/iam-role/{{.IamRole}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-role">ROLE</span>
+            <span class="resource-name">{{.IamRole}}</span>
+          </div>
+          {{if .IamPolicies}}
+          {{range .IamPolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{end}}
           <div class="nested-section-label">Endpoints</div>
           <div class="endpoint-info">
             <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .PrivateIP}}{{.PrivateIP}}{{else}}—{{end}}</code></div>
@@ -142,10 +156,36 @@
           {{end}}
           {{end}}
           {{end}}
+          {{if .IamRole}}
+          <div class="nested-section-label">IAM Role</div>
+          <div class="resource-row clickable" hx-get="/detail/iam-role/{{.IamRole}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-role">ROLE</span>
+            <span class="resource-name">{{.IamRole}}</span>
+          </div>
+          {{if .IamPolicies}}
+          {{range .IamPolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{end}}
+          {{if .Policies}}
+          <div class="nested-section-label">Resource Policy</div>
+          {{range .Policies}}
+          <div class="resource-row">
+            <span class="tag tag-{{.Effect}}">{{.Effect}}</span>
+            <span class="resource-name">{{.Action}}</span>
+            <span class="resource-detail">{{.Principal}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .FunctionUrl}}
           <div class="nested-section-label">Endpoints</div>
           <div class="endpoint-info">
-            <div class="endpoint-row"><span class="endpoint-label">API</span> <code class="endpoint-value">lambda.{{$.Region}}.amazonaws.com</code></div>
+            <div class="endpoint-row"><span class="endpoint-label">URL</span> <a href="{{.FunctionUrl}}" target="_blank" class="endpoint-value endpoint-link">{{.FunctionUrl}}</a></div>
           </div>
+          {{end}}
         </div>
       </div>
       {{end}}

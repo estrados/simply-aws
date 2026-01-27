@@ -36,6 +36,7 @@ func Start(addr string, status awscli.Status) error {
 		"ROLE": "resource-icon-role", "GRP": "resource-icon-grp",
 		"SQS": "resource-icon-sqs", "SNS": "resource-icon-sns",
 		"KIN": "resource-icon-kinesis", "EB": "resource-icon-eb",
+		"ALB": "resource-icon-alb", "NLB": "resource-icon-nlb", "TG": "resource-icon-tg",
 	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
@@ -279,6 +280,39 @@ func Start(addr string, status awscli.Status) error {
 				}
 			}
 			return out
+		},
+		"lbsFor": func(vpcId string, data *sawsSync.VPCData) []sawsSync.LoadBalancer {
+			var out []sawsSync.LoadBalancer
+			for _, lb := range data.LoadBalancers {
+				if lb.VpcId == vpcId {
+					out = append(out, lb)
+				}
+			}
+			return out
+		},
+		"tgsForLB": func(lbArn string, data *sawsSync.VPCData) []sawsSync.TargetGroup {
+			var out []sawsSync.TargetGroup
+			for _, tg := range data.TargetGroups {
+				if tg.LoadBalancerArn == lbArn {
+					out = append(out, tg)
+				}
+			}
+			return out
+		},
+		"lbIcon": func(lbType string) string {
+			if lbType == "network" {
+				return "NLB"
+			}
+			if lbType == "gateway" {
+				return "GLB"
+			}
+			return "ALB"
+		},
+		"lbIconClass": func(lbType string) string {
+			if lbType == "network" {
+				return "resource-icon-nlb"
+			}
+			return "resource-icon-alb"
 		},
 		"subnetsForRT": func(rt sawsSync.RouteTable, vpcId string, data *sawsSync.VPCData) []sawsSync.Subnet {
 			if rt.IsMain {
@@ -828,6 +862,66 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	case "lb":
+		vpcData, _ := sawsSync.LoadVPCData(r.URL.Query().Get("region"))
+		if vpcData != nil {
+			for _, lb := range vpcData.LoadBalancers {
+				if lb.Name == resId {
+					sgs := "—"
+					if len(lb.SecurityGroups) > 0 {
+						sgs = strings.Join(lb.SecurityGroups, ", ")
+					}
+					azs := "—"
+					if len(lb.AvailZones) > 0 {
+						azs = strings.Join(lb.AvailZones, ", ")
+					}
+					iconType := "ALB"
+					if lb.Type == "network" {
+						iconType = "NLB"
+					}
+					detail = detailData{
+						Type:  iconType,
+						Title: lb.Name,
+						Fields: []detailField{
+							{"Name", lb.Name},
+							{"Type", lb.Type},
+							{"Scheme", lb.Scheme},
+							{"State", lb.State},
+							{"DNS Name", lb.DNSName},
+							{"VPC ID", lb.VpcId},
+							{"Availability Zones", azs},
+							{"Security Groups", sgs},
+						},
+					}
+					break
+				}
+			}
+		}
+	case "tg":
+		vpcData, _ := sawsSync.LoadVPCData(r.URL.Query().Get("region"))
+		if vpcData != nil {
+			for _, tg := range vpcData.TargetGroups {
+				if tg.Name == resId {
+					healthPath := tg.HealthCheckPath
+					if healthPath == "" {
+						healthPath = "—"
+					}
+					detail = detailData{
+						Type:  "TG",
+						Title: tg.Name,
+						Fields: []detailField{
+							{"Name", tg.Name},
+							{"Protocol", tg.Protocol},
+							{"Port", fmt.Sprintf("%d", tg.Port)},
+							{"Target Type", tg.TargetType},
+							{"VPC ID", tg.VpcId},
+							{"Health Check Path", healthPath},
+						},
+					}
+					break
+				}
+			}
+		}
 	case "s3":
 		s3Data, _ := sawsSync.LoadS3DataEnriched()
 		if s3Data != nil {
@@ -1075,21 +1169,28 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 					if len(inst.SecurityGroups) > 0 {
 						sgs = strings.Join(inst.SecurityGroups, ", ")
 					}
+					fields := []detailField{
+						{"Instance ID", inst.InstanceId},
+						{"Name", nameOr(inst.Name, "—")},
+						{"Instance Type", inst.InstanceType},
+						{"State", inst.State},
+						{"Public IP", publicIP},
+						{"Private IP", privateIP},
+						{"VPC ID", vpcId},
+						{"Subnet ID", nameOr(inst.SubnetId, "—")},
+						{"Security Groups", sgs},
+						{"Launch Time", inst.LaunchTime},
+					}
+					if inst.IamRole != "" {
+						fields = append(fields, detailField{"IAM Role", inst.IamRole})
+						if len(inst.IamPolicies) > 0 {
+							fields = append(fields, detailField{"IAM Policies", strings.Join(inst.IamPolicies, ", ")})
+						}
+					}
 					detail = detailData{
-						Type:  "EC2",
-						Title: nameOr(inst.Name, inst.InstanceId),
-						Fields: []detailField{
-							{"Instance ID", inst.InstanceId},
-							{"Name", nameOr(inst.Name, "—")},
-							{"Instance Type", inst.InstanceType},
-							{"State", inst.State},
-							{"Public IP", publicIP},
-							{"Private IP", privateIP},
-							{"VPC ID", vpcId},
-							{"Subnet ID", nameOr(inst.SubnetId, "—")},
-							{"Security Groups", sgs},
-							{"Launch Time", inst.LaunchTime},
-						},
+						Type:   "EC2",
+						Title:  nameOr(inst.Name, inst.InstanceId),
+						Fields: fields,
 					}
 					break
 				}
@@ -1135,6 +1236,12 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 						{"Timeout", fmt.Sprintf("%d s", fn.Timeout)},
 						{"Code Size", formatBytes(fn.CodeSize)},
 						{"Last Modified", fn.LastModified},
+					}
+					if fn.IamRole != "" {
+						fields = append(fields, detailField{"IAM Role", fn.IamRole})
+						if len(fn.IamPolicies) > 0 {
+							fields = append(fields, detailField{"IAM Policies", strings.Join(fn.IamPolicies, ", ")})
+						}
 					}
 					if fn.FunctionUrl != "" {
 						fields = append(fields, detailField{"Function URL", fn.FunctionUrl})
@@ -1467,9 +1574,9 @@ func syncedAtForTab(tab, region string) string {
 	var keys []string
 	switch tab {
 	case "net":
-		keys = []string{region + ":vpcs", region + ":subnets", region + ":security-groups"}
+		keys = []string{region + ":vpcs", region + ":subnets", region + ":security-groups", region + ":load-balancers"}
 	case "compute":
-		keys = []string{region + ":ec2", region + ":ecs-enriched", region + ":lambda"}
+		keys = []string{region + ":ec2-enriched", region + ":ecs-enriched", region + ":lambda"}
 	case "database":
 		keys = []string{region + ":rds", region + ":dynamodb", region + ":elasticache-enriched"}
 	case "s3":

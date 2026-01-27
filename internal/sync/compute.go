@@ -2,6 +2,7 @@ package sync
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/estrados/simply-aws/internal/awscli"
 )
@@ -23,6 +24,8 @@ type EC2Instance struct {
 	SubnetId       string   `json:"SubnetId"`
 	SecurityGroups []string `json:"SecurityGroups"`
 	LaunchTime     string   `json:"LaunchTime"`
+	IamRole        string   `json:"IamRole"`
+	IamPolicies    []string `json:"IamPolicies"`
 }
 
 type ECSCluster struct {
@@ -44,9 +47,13 @@ type LambdaFunction struct {
 	Timeout        int      `json:"Timeout"`
 	CodeSize       int64    `json:"CodeSize"`
 	LastModified   string   `json:"LastModified"`
-	VpcId          string   `json:"VpcId"`
-	SubnetIds      []string `json:"SubnetIds"`
-	SecurityGroups []string `json:"SecurityGroups"`
+	FunctionUrl    string           `json:"FunctionUrl"`
+	Policies       []ResourcePolicy `json:"Policies"`
+	VpcId          string           `json:"VpcId"`
+	SubnetIds      []string         `json:"SubnetIds"`
+	SecurityGroups []string         `json:"SecurityGroups"`
+	IamRole        string           `json:"IamRole"`
+	IamPolicies    []string         `json:"IamPolicies"`
 }
 
 func SyncComputeData(region string) ([]SyncResult, error) {
@@ -60,18 +67,21 @@ func SyncComputeData(region string) ([]SyncResult, error) {
 	// EC2
 	if data, err := awscli.Run("ec2", "describe-instances", "--region", region); err == nil {
 		WriteCache(region+":ec2", data)
-		// Count instances across all reservations
 		var resp struct {
 			Reservations []struct {
 				Instances []json.RawMessage `json:"Instances"`
 			} `json:"Reservations"`
 		}
 		json.Unmarshal(data, &resp)
-		count := 0
+		var instances []EC2Instance
 		for _, r := range resp.Reservations {
-			count += len(r.Instances)
+			for _, inst := range r.Instances {
+				instances = append(instances, parseEC2Instance(inst))
+			}
 		}
-		results = append(results, SyncResult{Service: "ec2", Count: count})
+		enriched, _ := json.Marshal(instances)
+		WriteCache(region+":ec2-enriched", enriched)
+		results = append(results, SyncResult{Service: "ec2", Count: len(instances)})
 	} else {
 		results = append(results, SyncResult{Service: "ec2", Error: err.Error()})
 	}
@@ -112,7 +122,26 @@ func SyncComputeData(region string) ([]SyncResult, error) {
 		json.Unmarshal(data, &resp)
 		var functions []LambdaFunction
 		for _, f := range resp.Functions {
-			functions = append(functions, parseLambdaFunction(f))
+			fn := parseLambdaFunction(f)
+			// Check for Function URL
+			if urlData, err := awscli.Run("lambda", "get-function-url-config",
+				"--function-name", fn.FunctionName, "--region", region); err == nil {
+				var urlResp struct {
+					FunctionUrl string `json:"FunctionUrl"`
+				}
+				json.Unmarshal(urlData, &urlResp)
+				fn.FunctionUrl = urlResp.FunctionUrl
+			}
+			// Fetch resource policy
+			if polData, err := awscli.Run("lambda", "get-policy",
+				"--function-name", fn.FunctionName, "--region", region); err == nil {
+				var polResp struct {
+					Policy string `json:"Policy"`
+				}
+				json.Unmarshal(polData, &polResp)
+				fn.Policies = ParseResourcePolicies(polResp.Policy)
+			}
+			functions = append(functions, fn)
 		}
 		enriched, _ := json.Marshal(functions)
 		WriteCache(region+":lambda", enriched)
@@ -127,8 +156,11 @@ func SyncComputeData(region string) ([]SyncResult, error) {
 func LoadComputeData(region string) (*ComputeData, error) {
 	data := &ComputeData{}
 
-	// EC2
-	if raw, err := ReadCache(region + ":ec2"); err == nil && raw != nil {
+	// EC2 (enriched with IAM role/policies during sync)
+	if raw, err := ReadCache(region + ":ec2-enriched"); err == nil && raw != nil {
+		json.Unmarshal(raw, &data.EC2)
+	} else if raw, err := ReadCache(region + ":ec2"); err == nil && raw != nil {
+		// Fallback to raw cache if not yet enriched
 		var resp struct {
 			Reservations []struct {
 				Instances []json.RawMessage `json:"Instances"`
@@ -174,6 +206,9 @@ func parseEC2Instance(raw json.RawMessage) EC2Instance {
 		SecurityGroups []struct {
 			GroupId string `json:"GroupId"`
 		} `json:"SecurityGroups"`
+		IamInstanceProfile *struct {
+			Arn string `json:"Arn"`
+		} `json:"IamInstanceProfile"`
 	}
 	json.Unmarshal(raw, &r)
 
@@ -196,7 +231,61 @@ func parseEC2Instance(raw json.RawMessage) EC2Instance {
 	for _, sg := range r.SecurityGroups {
 		inst.SecurityGroups = append(inst.SecurityGroups, sg.GroupId)
 	}
+	// Resolve IAM instance profile → role → policies
+	if r.IamInstanceProfile != nil && r.IamInstanceProfile.Arn != "" {
+		inst.IamRole, inst.IamPolicies = resolveInstanceProfile(r.IamInstanceProfile.Arn)
+	}
 	return inst
+}
+
+func resolveInstanceProfile(profileArn string) (roleName string, policies []string) {
+	// Extract instance profile name from ARN
+	// arn:aws:iam::123456:instance-profile/MyProfile
+	parts := strings.Split(profileArn, "/")
+	profileName := parts[len(parts)-1]
+
+	// Get instance profile to find the role
+	if data, err := awscli.Run("iam", "get-instance-profile",
+		"--instance-profile-name", profileName); err == nil {
+		var resp struct {
+			InstanceProfile struct {
+				Roles []struct {
+					RoleName string `json:"RoleName"`
+				} `json:"Roles"`
+			} `json:"InstanceProfile"`
+		}
+		json.Unmarshal(data, &resp)
+		if len(resp.InstanceProfile.Roles) > 0 {
+			roleName = resp.InstanceProfile.Roles[0].RoleName
+
+			// Get attached policies for this role
+			if polData, err := awscli.Run("iam", "list-attached-role-policies",
+				"--role-name", roleName); err == nil {
+				var polResp struct {
+					AttachedPolicies []struct {
+						PolicyName string `json:"PolicyName"`
+					} `json:"AttachedPolicies"`
+				}
+				json.Unmarshal(polData, &polResp)
+				for _, p := range polResp.AttachedPolicies {
+					policies = append(policies, p.PolicyName)
+				}
+			}
+
+			// Also get inline policies
+			if polData, err := awscli.Run("iam", "list-role-policies",
+				"--role-name", roleName); err == nil {
+				var polResp struct {
+					PolicyNames []string `json:"PolicyNames"`
+				}
+				json.Unmarshal(polData, &polResp)
+				for _, p := range polResp.PolicyNames {
+					policies = append(policies, p+" (inline)")
+				}
+			}
+		}
+	}
+	return
 }
 
 func parseECSCluster(raw json.RawMessage) ECSCluster {
@@ -232,6 +321,7 @@ func parseLambdaFunction(raw json.RawMessage) LambdaFunction {
 		Timeout      int    `json:"Timeout"`
 		CodeSize     int64  `json:"CodeSize"`
 		LastModified string `json:"LastModified"`
+		Role         string `json:"Role"`
 		VpcConfig    *struct {
 			VpcId            string   `json:"VpcId"`
 			SubnetIds        []string `json:"SubnetIds"`
@@ -255,5 +345,34 @@ func parseLambdaFunction(raw json.RawMessage) LambdaFunction {
 		fn.SubnetIds = r.VpcConfig.SubnetIds
 		fn.SecurityGroups = r.VpcConfig.SecurityGroupIds
 	}
+	// Resolve IAM execution role → policies
+	if r.Role != "" {
+		parts := strings.Split(r.Role, "/")
+		roleName := parts[len(parts)-1]
+		fn.IamRole = roleName
+		if polData, err := awscli.Run("iam", "list-attached-role-policies",
+			"--role-name", roleName); err == nil {
+			var polResp struct {
+				AttachedPolicies []struct {
+					PolicyName string `json:"PolicyName"`
+				} `json:"AttachedPolicies"`
+			}
+			json.Unmarshal(polData, &polResp)
+			for _, p := range polResp.AttachedPolicies {
+				fn.IamPolicies = append(fn.IamPolicies, p.PolicyName)
+			}
+		}
+		if polData, err := awscli.Run("iam", "list-role-policies",
+			"--role-name", roleName); err == nil {
+			var polResp struct {
+				PolicyNames []string `json:"PolicyNames"`
+			}
+			json.Unmarshal(polData, &polResp)
+			for _, p := range polResp.PolicyNames {
+				fn.IamPolicies = append(fn.IamPolicies, p+" (inline)")
+			}
+		}
+	}
 	return fn
 }
+
