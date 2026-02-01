@@ -66,6 +66,22 @@
           {{end}}
           {{end}}
           {{end}}
+          {{if .Volumes}}
+          <div class="nested-section-label">Volumes</div>
+          {{range .Volumes}}
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-ebs">EBS</span>
+            <code class="resource-id">{{.VolumeId}}</code>
+            <span class="resource-detail">{{.DeviceName}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .ImageId}}
+          <div class="nested-section-label">AMI</div>
+          <div class="resource-row">
+            <code class="resource-id">{{.ImageId}}</code>
+          </div>
+          {{end}}
           <div class="nested-section-label">Endpoints</div>
           <div class="endpoint-info">
             <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .PrivateIP}}{{.PrivateIP}}{{else}}—{{end}}</code></div>
@@ -103,6 +119,90 @@
               <span class="resource-detail">{{.RunningTasks}} running · {{.PendingTasks}} pending · {{.Services}} services</span>
             </div>
           </div>
+          {{if .ECSServices}}
+          <div class="nested-section-label">Services <span class="count-badge">{{len .ECSServices}}</span></div>
+          {{range .ECSServices}}
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-ecs">SVC</span>
+            <span class="tag tag-{{.Status}}">{{.Status}}</span>
+            {{if .LaunchType}}<span class="tag tag-fargate">{{.LaunchType}}</span>{{end}}
+            <span class="resource-name">{{.ServiceName}}</span>
+            <span class="resource-detail">{{.RunningCount}}/{{.DesiredCount}} tasks</span>
+          </div>
+          {{if .SubnetIds}}
+          {{range .SubnetIds}}
+          <div class="resource-row clickable" hx-get="/detail/subnet/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sub">SUB</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .SecurityGroups}}
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .LBTargetGroups}}
+          {{range .LBTargetGroups}}
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-tg">TG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{end}}
+          {{end}}
+          {{if .Tasks}}
+          <div class="nested-section-label">Running Tasks <span class="count-badge">{{len .Tasks}}</span></div>
+          {{range .Tasks}}
+          <div class="resource-row">
+            <span class="resource-icon resource-icon-ecs">TSK</span>
+            <span class="tag tag-{{.LastStatus}}">{{.LastStatus}}</span>
+            {{if .LaunchType}}<span class="tag tag-fargate">{{.LaunchType}}</span>{{end}}
+          </div>
+          <div class="endpoint-info">
+            <div class="endpoint-row"><span class="endpoint-label">Private</span> <code class="endpoint-value">{{if .PrivateIP}}{{.PrivateIP}}{{else}}—{{end}}</code></div>
+            <div class="endpoint-row"><span class="endpoint-label">Public</span> <code class="endpoint-value">{{if .PublicIP}}{{.PublicIP}}{{else}}—{{end}}</code></div>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .TaskDefs}}
+          <div class="nested-section-label">Task Definitions <span class="count-badge">{{len .TaskDefs}}</span></div>
+          {{range .TaskDefs}}
+          <div class="resource-row clickable" hx-get="/detail/ecs-taskdef/{{.Family}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-ecs">TD</span>
+            <span class="resource-name">{{.Family}}:{{.Revision}}</span>
+            {{if .LaunchType}}<span class="tag tag-fargate">{{.LaunchType}}</span>{{end}}
+          </div>
+          {{if .TaskRoleName}}
+          <div class="nested-section-label">Task Role</div>
+          <div class="resource-row clickable" hx-get="/detail/iam-role/{{.TaskRoleName}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-role">ROLE</span>
+            <span class="resource-name">{{.TaskRoleName}}</span>
+          </div>
+          {{range .TaskRolePolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .ExecRoleName}}
+          <div class="nested-section-label">Execution Role</div>
+          <div class="resource-row clickable" hx-get="/detail/iam-role/{{.ExecRoleName}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-role">ROLE</span>
+            <span class="resource-name">{{.ExecRoleName}}</span>
+          </div>
+          {{range .ExecRolePolicies}}
+          <div class="resource-row">
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+          {{end}}
+          {{end}}
         </div>
       </div>
       {{end}}

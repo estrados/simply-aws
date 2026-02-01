@@ -22,17 +22,29 @@
     </div>
   </div>
   <div class="vpc-body">
-    <div class="vpc-section">
       {{range .S3.Buckets}}
-      <div class="resource-row clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
-        <span class="resource-icon resource-icon-s3">S3</span>
-        <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
-        <span class="resource-name">{{.Name}}</span>
-        {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
-        <span class="resource-detail">{{.CreationDate}}</span>
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/s3/{{.Name}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-s3">S3</span>
+          <span class="tag tag-s3-{{.Access}}">{{.Access}}</span>
+          <span class="resource-name">{{.Name}}</span>
+          {{if .Region}}<span class="resource-detail">{{.Region}}</span>{{end}}
+          <span class="resource-detail">{{.CreationDate}}</span>
+        </div>
+        {{if .Policies}}
+        <div class="rt-subnets">
+          <div class="nested-section-label">Bucket Policy</div>
+          {{range .Policies}}
+          <div class="resource-row">
+            <span class="tag tag-{{.Effect}}">{{.Effect}}</span>
+            <span class="resource-name">{{.Action}}</span>
+            <span class="resource-detail">{{.Principal}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
       </div>
       {{end}}
-    </div>
   </div>
 </div>
 {{end}}

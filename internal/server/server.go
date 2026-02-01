@@ -37,6 +37,8 @@ func Start(addr string, status awscli.Status) error {
 		"SQS": "resource-icon-sqs", "SNS": "resource-icon-sns",
 		"KIN": "resource-icon-kinesis", "EB": "resource-icon-eb",
 		"ALB": "resource-icon-alb", "NLB": "resource-icon-nlb", "TG": "resource-icon-tg",
+		"EBS": "resource-icon-ebs",
+		"SM": "resource-icon-sm", "BR": "resource-icon-br",
 	}
 	funcMap := template.FuncMap{
 		"not":           func(b bool) bool { return !b },
@@ -67,6 +69,28 @@ func Start(addr string, status awscli.Status) error {
 		},
 		"hasStreamingData": func(v *sawsSync.StreamingData) bool {
 			return v != nil && (len(v.SQS) > 0 || len(v.SNS) > 0 || len(v.Kinesis) > 0 || len(v.EventBridge) > 0)
+		},
+		"hasAIData": func(v *sawsSync.AIData) bool {
+			return v != nil && (len(v.SageMakerNotebooks) > 0 || len(v.SageMakerEndpoints) > 0 || len(v.SageMakerModels) > 0 || len(v.BedrockModels) > 0 || len(v.BedrockCustom) > 0)
+		},
+		"groupBedrockByProvider": func(models []sawsSync.BedrockModel) []bedrockProviderGroup {
+			order := []string{}
+			groups := map[string][]sawsSync.BedrockModel{}
+			for _, m := range models {
+				p := m.Provider
+				if p == "" {
+					p = "Unknown"
+				}
+				if _, exists := groups[p]; !exists {
+					order = append(order, p)
+				}
+				groups[p] = append(groups[p], m)
+			}
+			var result []bedrockProviderGroup
+			for _, p := range order {
+				result = append(result, bedrockProviderGroup{Provider: p, Models: groups[p]})
+			}
+			return result
 		},
 		"principalLabel": func(principal string) string {
 			// *.amazonaws.com → extract service name
@@ -372,7 +396,10 @@ func Start(addr string, status awscli.Status) error {
 	mux.HandleFunc("/sync/compute", handleSyncCompute)
 	mux.HandleFunc("/sync/iam", handleSyncIAM)
 	mux.HandleFunc("/sync/streaming", handleSyncStreaming)
+	mux.HandleFunc("/sync/ai", handleSyncAI)
 	mux.HandleFunc("/sync/all", handleSyncAll)
+	mux.HandleFunc("/sync/progress", handleSyncProgress)
+	mux.HandleFunc("/sync/content", handleSyncContent)
 	mux.HandleFunc("/detail/", handleDetail)
 
 	// JSON APIs (kept for sync/templates)
@@ -399,6 +426,7 @@ type pageData struct {
 	Compute        *sawsSync.ComputeData
 	IAM            *sawsSync.IAMData
 	Streaming      *sawsSync.StreamingData
+	AI             *sawsSync.AIData
 	SyncedAt       string
 }
 
@@ -485,6 +513,9 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	case "streaming":
 		streamData, _ := sawsSync.LoadStreamingData(region)
 		data.Streaming = streamData
+	case "ai":
+		aiData, _ := sawsSync.LoadAIData(region)
+		data.AI = aiData
 	}
 	data.SyncedAt = syncedAtForTab(tab, region)
 
@@ -531,13 +562,19 @@ func handleSyncVPC(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
-	sawsSync.SyncVPCData(region)
-	vpcData, _ := sawsSync.LoadVPCData(region)
-	data := newPageData()
-	data.Region = region
-	data.VPC = vpcData
-	tmpl.ExecuteTemplate(w, "vpc-panel", data)
-	writeSyncedAtOOB(w, "net", region)
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("net", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncVPCData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncS3(w http.ResponseWriter, r *http.Request) {
@@ -550,16 +587,20 @@ func handleSyncS3(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
-	sawsSync.SyncS3WithRegions()
-	sawsSync.SyncDataWarehouseData(region)
-	s3Data, _ := sawsSync.LoadS3DataEnriched()
-	dwData, _ := sawsSync.LoadDataWarehouseData(region)
-	data := newPageData()
-	data.Region = region
-	data.S3 = s3Data
-	data.DW = dwData
-	tmpl.ExecuteTemplate(w, "s3-content", data)
-	writeSyncedAtOOB(w, "s3", region)
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("s3", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncS3WithRegions(onStep)
+		sawsSync.SyncDataWarehouseData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncDatabase(w http.ResponseWriter, r *http.Request) {
@@ -572,13 +613,19 @@ func handleSyncDatabase(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
-	sawsSync.SyncDatabaseData(region)
-	dbData, _ := sawsSync.LoadDatabaseData(region)
-	data := newPageData()
-	data.Region = region
-	data.DB = dbData
-	tmpl.ExecuteTemplate(w, "database-content", data)
-	writeSyncedAtOOB(w, "database", region)
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("database", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncDatabaseData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncCompute(w http.ResponseWriter, r *http.Request) {
@@ -591,13 +638,19 @@ func handleSyncCompute(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
-	sawsSync.SyncComputeData(region)
-	computeData, _ := sawsSync.LoadComputeData(region)
-	data := newPageData()
-	data.Region = region
-	data.Compute = computeData
-	tmpl.ExecuteTemplate(w, "compute-content", data)
-	writeSyncedAtOOB(w, "compute", region)
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("compute", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncComputeData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncIAM(w http.ResponseWriter, r *http.Request) {
@@ -605,12 +658,24 @@ func handleSyncIAM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use POST", http.StatusMethodNotAllowed)
 		return
 	}
-	sawsSync.SyncIAMData()
-	iamData, _ := sawsSync.LoadIAMData()
-	data := newPageData()
-	data.IAM = iamData
-	tmpl.ExecuteTemplate(w, "iam-content", data)
-	writeSyncedAtOOB(w, "iam", "")
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("iam", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncIAMData(onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncStreaming(w http.ResponseWriter, r *http.Request) {
@@ -623,13 +688,44 @@ func handleSyncStreaming(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
-	sawsSync.SyncStreamingData(region)
-	streamData, _ := sawsSync.LoadStreamingData(region)
-	data := newPageData()
-	data.Region = region
-	data.Streaming = streamData
-	tmpl.ExecuteTemplate(w, "streaming-content", data)
-	writeSyncedAtOOB(w, "streaming", region)
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("streaming", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncStreamingData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+}
+
+func handleSyncAI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	region := r.FormValue("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
+	jobID := sawsSync.StartSync("ai", region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncAIData(region, onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
 }
 
 func handleSyncAll(w http.ResponseWriter, r *http.Request) {
@@ -642,15 +738,45 @@ func handleSyncAll(w http.ResponseWriter, r *http.Request) {
 	if region == "" {
 		region = awsStatus.Region
 	}
+	if sawsSync.IsSyncing() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+		return
+	}
 	tab := r.FormValue("tab")
+	jobID := sawsSync.StartSync(tab, region)
+	onStep := func(label string) { sawsSync.IncrSync(jobID, label) }
+	go func() {
+		sawsSync.SyncVPCData(region, onStep)
+		sawsSync.SyncS3WithRegions(onStep)
+		sawsSync.SyncDatabaseData(region, onStep)
+		sawsSync.SyncComputeData(region, onStep)
+		sawsSync.SyncDataWarehouseData(region, onStep)
+		sawsSync.SyncStreamingData(region, onStep)
+		sawsSync.SyncAIData(region, onStep)
+		sawsSync.SyncIAMData(onStep)
+		sawsSync.FinishSync(jobID)
+	}()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sawsSync.GetSyncProgress())
+}
 
-	sawsSync.SyncVPCData(region)
-	sawsSync.SyncS3WithRegions()
-	sawsSync.SyncDatabaseData(region)
-	sawsSync.SyncComputeData(region)
-	sawsSync.SyncDataWarehouseData(region)
-	sawsSync.SyncStreamingData(region)
-	sawsSync.SyncIAMData()
+func handleSyncProgress(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	job := sawsSync.GetSyncProgress()
+	if job == nil {
+		json.NewEncoder(w).Encode(map[string]string{"status": "idle"})
+		return
+	}
+	json.NewEncoder(w).Encode(job)
+}
+
+func handleSyncContent(w http.ResponseWriter, r *http.Request) {
+	tab := r.URL.Query().Get("tab")
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		region = awsStatus.Region
+	}
 
 	data := newPageData()
 	data.CurrentRegion = region
@@ -660,21 +786,31 @@ func handleSyncAll(w http.ResponseWriter, r *http.Request) {
 	switch tab {
 	case "net":
 		data.VPC, _ = sawsSync.LoadVPCData(region)
+		tmpl.ExecuteTemplate(w, "vpc-panel", data)
 	case "database":
 		data.DB, _ = sawsSync.LoadDatabaseData(region)
+		tmpl.ExecuteTemplate(w, "database-content", data)
 	case "compute":
 		data.Compute, _ = sawsSync.LoadComputeData(region)
+		tmpl.ExecuteTemplate(w, "compute-content", data)
 	case "s3":
 		data.S3, _ = sawsSync.LoadS3DataEnriched()
 		data.DW, _ = sawsSync.LoadDataWarehouseData(region)
+		tmpl.ExecuteTemplate(w, "s3-content", data)
 	case "iam":
 		data.IAM, _ = sawsSync.LoadIAMData()
+		tmpl.ExecuteTemplate(w, "iam-content", data)
 	case "streaming":
 		data.Streaming, _ = sawsSync.LoadStreamingData(region)
+		tmpl.ExecuteTemplate(w, "streaming-content", data)
+	case "ai":
+		data.AI, _ = sawsSync.LoadAIData(region)
+		tmpl.ExecuteTemplate(w, "ai-content", data)
+	default:
+		data.VPC, _ = sawsSync.LoadVPCData(region)
+		tmpl.ExecuteTemplate(w, "vpc-panel", data)
 	}
-	data.SyncedAt = syncedAtForTab(tab, region)
-
-	tmpl.ExecuteTemplate(w, "content", data)
+	writeSyncedAtOOB(w, tab, region)
 }
 
 type detailData struct {
@@ -696,6 +832,11 @@ type detailField struct {
 type iamRoleGroup struct {
 	Principal string
 	Roles     []sawsSync.IAMRole
+}
+
+type bedrockProviderGroup struct {
+	Provider string
+	Models   []sawsSync.BedrockModel
 }
 
 
@@ -1222,6 +1363,122 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	case "ecs-taskdef":
+		computeData, _ := sawsSync.LoadComputeData(r.URL.Query().Get("region"))
+		if computeData != nil {
+			for _, c := range computeData.ECS {
+				for _, td := range c.TaskDefs {
+					if td.Family == resId {
+						fields := []detailField{
+							{"Family", td.Family},
+							{"Revision", fmt.Sprintf("%d", td.Revision)},
+						}
+						if td.LaunchType != "" {
+							fields = append(fields, detailField{"Launch Type", td.LaunchType})
+						}
+						fields = append(fields, detailField{"Cluster", c.ClusterName})
+						if td.TaskRoleName != "" {
+							fields = append(fields, detailField{"Task Role", td.TaskRoleName})
+							if len(td.TaskRolePolicies) > 0 {
+								fields = append(fields, detailField{"Task Role Policies", strings.Join(td.TaskRolePolicies, ", ")})
+							}
+						}
+						if td.ExecRoleName != "" {
+							fields = append(fields, detailField{"Execution Role", td.ExecRoleName})
+							if len(td.ExecRolePolicies) > 0 {
+								fields = append(fields, detailField{"Exec Role Policies", strings.Join(td.ExecRolePolicies, ", ")})
+							}
+						}
+
+						// Count running tasks for this task definition
+						var running, pending int
+						type taskInfo struct {
+							status, privateIP, publicIP, subnetId string
+						}
+						var matchedTasks []taskInfo
+						for _, task := range c.Tasks {
+							if strings.Contains(task.TaskDefinition, "/"+td.Family+":") || strings.HasSuffix(task.TaskDefinition, "/"+td.Family) {
+								switch task.LastStatus {
+								case "RUNNING":
+									running++
+								case "PENDING":
+									pending++
+								}
+								matchedTasks = append(matchedTasks, taskInfo{
+									status: task.LastStatus, privateIP: task.PrivateIP,
+									publicIP: task.PublicIP, subnetId: task.SubnetId,
+								})
+							}
+						}
+						taskSummary := fmt.Sprintf("%d running", running)
+						if pending > 0 {
+							taskSummary += fmt.Sprintf(", %d pending", pending)
+						}
+						fields = append(fields, detailField{"Tasks", taskSummary})
+
+						// Find services using this task definition
+						for _, svc := range c.ECSServices {
+							if strings.Contains(svc.TaskDefinition, "/"+td.Family+":") || strings.HasSuffix(svc.TaskDefinition, "/"+td.Family) {
+								networkMode := "private"
+								if svc.AssignPublicIP {
+									networkMode = "public"
+								}
+								fields = append(fields,
+									detailField{"Service", svc.ServiceName},
+									detailField{"  Status", svc.Status},
+									detailField{"  Desired/Running", fmt.Sprintf("%d/%d", svc.DesiredCount, svc.RunningCount)},
+									detailField{"  Network", networkMode},
+								)
+								if len(svc.SubnetIds) > 0 {
+									fields = append(fields, detailField{"  Subnets", strings.Join(svc.SubnetIds, ", ")})
+								}
+								if len(svc.SecurityGroups) > 0 {
+									fields = append(fields, detailField{"  Security Groups", strings.Join(svc.SecurityGroups, ", ")})
+								}
+								for _, tgArn := range svc.LBTargetGroups {
+									tgParts := strings.Split(tgArn, "/")
+									tgName := tgArn
+									if len(tgParts) >= 2 {
+										tgName = tgParts[1]
+									}
+									fields = append(fields, detailField{"  Target Group", tgName})
+								}
+							}
+						}
+
+						// List individual tasks with IPs
+						for i, t := range matchedTasks {
+							ip := t.privateIP
+							if ip == "" {
+								ip = "—"
+							}
+							pub := t.publicIP
+							if pub == "" {
+								pub = "—"
+							}
+							fields = append(fields,
+								detailField{fmt.Sprintf("Task %d", i+1), t.status},
+								detailField{"  Private IP", ip},
+								detailField{"  Public IP", pub},
+							)
+							if t.subnetId != "" {
+								fields = append(fields, detailField{"  Subnet", t.subnetId})
+							}
+						}
+
+						detail = detailData{
+							Type:   "ECS",
+							Title:  fmt.Sprintf("%s:%d", td.Family, td.Revision),
+							Fields: fields,
+						}
+						break
+					}
+				}
+				if detail.Type != "" {
+					break
+				}
+			}
+		}
 	case "lambda":
 		computeData, _ := sawsSync.LoadComputeData(r.URL.Query().Get("region"))
 		if computeData != nil {
@@ -1363,6 +1620,87 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 					detail = detailData{
 						Type:   "EB",
 						Title:  b.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "sagemaker-notebook":
+		aiData, _ := sawsSync.LoadAIData(r.URL.Query().Get("region"))
+		if aiData != nil {
+			for _, nb := range aiData.SageMakerNotebooks {
+				if nb.Name == resId {
+					fields := []detailField{
+						{"Name", nb.Name},
+						{"Status", nb.Status},
+						{"Instance Type", nb.InstanceType},
+						{"Volume Size", fmt.Sprintf("%d GB", nb.VolumeSizeGB)},
+						{"Internet Access", nb.DirectInternetAccess},
+						{"Created", nb.CreationTime},
+					}
+					if nb.RoleName != "" {
+						fields = append(fields, detailField{"IAM Role", nb.RoleName})
+					}
+					if nb.SubnetId != "" {
+						fields = append(fields, detailField{"Subnet", nb.SubnetId})
+					}
+					if len(nb.SecurityGroups) > 0 {
+						fields = append(fields, detailField{"Security Groups", strings.Join(nb.SecurityGroups, ", ")})
+					}
+					if nb.Url != "" {
+						fields = append(fields, detailField{"URL", nb.Url})
+					}
+					detail = detailData{
+						Type:   "SM",
+						Title:  nb.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "sagemaker-endpoint":
+		aiData, _ := sawsSync.LoadAIData(r.URL.Query().Get("region"))
+		if aiData != nil {
+			for _, ep := range aiData.SageMakerEndpoints {
+				if ep.Name == resId {
+					fields := []detailField{
+						{"Endpoint Name", ep.Name},
+						{"Status", ep.Status},
+						{"Created", ep.CreationTime},
+					}
+					if ep.ModelName != "" {
+						fields = append(fields, detailField{"Model", ep.ModelName})
+					}
+					if ep.InstanceType != "" {
+						fields = append(fields, detailField{"Instance Type", ep.InstanceType})
+						fields = append(fields, detailField{"Instance Count", fmt.Sprintf("%d", ep.InstanceCount)})
+					}
+					detail = detailData{
+						Type:   "SM",
+						Title:  ep.Name,
+						Fields: fields,
+					}
+					break
+				}
+			}
+		}
+	case "sagemaker-model":
+		aiData, _ := sawsSync.LoadAIData(r.URL.Query().Get("region"))
+		if aiData != nil {
+			for _, m := range aiData.SageMakerModels {
+				if m.Name == resId {
+					fields := []detailField{
+						{"Model Name", m.Name},
+						{"Created", m.CreationTime},
+					}
+					if m.RoleName != "" {
+						fields = append(fields, detailField{"IAM Role", m.RoleName})
+					}
+					detail = detailData{
+						Type:   "SM",
+						Title:  m.Name,
 						Fields: fields,
 					}
 					break
@@ -1585,6 +1923,8 @@ func syncedAtForTab(tab, region string) string {
 		keys = []string{"iam:enriched"}
 	case "streaming":
 		keys = []string{region + ":streaming-enriched"}
+	case "ai":
+		keys = []string{region + ":sagemaker-notebooks", region + ":bedrock-models"}
 	}
 	if len(keys) == 0 {
 		return ""

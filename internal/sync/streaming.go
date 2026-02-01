@@ -63,7 +63,12 @@ type EventBridgeRule struct {
 	Schedule    string `json:"ScheduleExpression"`
 }
 
-func SyncStreamingData(region string) ([]SyncResult, error) {
+func SyncStreamingData(region string, onStep ...func(string)) ([]SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	var results []SyncResult
 	data := &StreamingData{}
 
@@ -113,6 +118,7 @@ func SyncStreamingData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "sqs", Error: err.Error()})
 	}
+	step("sqs")
 
 	// SNS
 	if raw, err := awscli.Run("sns", "list-topics", "--region", region); err == nil {
@@ -162,6 +168,7 @@ func SyncStreamingData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "sns", Error: err.Error()})
 	}
+	step("sns")
 
 	// Kinesis
 	if raw, err := awscli.Run("kinesis", "list-streams", "--region", region); err == nil {
@@ -214,6 +221,7 @@ func SyncStreamingData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "kinesis", Error: err.Error()})
 	}
+	step("kinesis")
 
 	// EventBridge
 	if raw, err := awscli.Run("events", "list-event-buses", "--region", region); err == nil {
@@ -257,6 +265,7 @@ func SyncStreamingData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "eventbridge", Error: err.Error()})
 	}
+	step("eventbridge")
 
 	// Cache enriched data
 	enriched, _ := json.Marshal(data)

@@ -52,13 +52,19 @@ type ElastiCacheCluster struct {
 	SecurityGroups   []string `json:"SecurityGroups"`
 }
 
-func SyncDatabaseData(region string) ([]SyncResult, error) {
+func SyncDatabaseData(region string, onStep ...func(string)) ([]SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	var results []SyncResult
 
 	// Sync security groups so SG detail links work from this tab
 	if data, err := awscli.Run("ec2", "describe-security-groups", "--region", region); err == nil {
 		WriteCache(region+":security-groups", data)
 	}
+	step("security groups")
 
 	// RDS
 	if data, err := awscli.Run("rds", "describe-db-instances", "--region", region); err == nil {
@@ -67,6 +73,7 @@ func SyncDatabaseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "rds", Error: err.Error()})
 	}
+	step("rds")
 
 	// DynamoDB - list then describe each
 	if data, err := awscli.Run("dynamodb", "list-tables", "--region", region); err == nil {
@@ -87,6 +94,7 @@ func SyncDatabaseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "dynamodb", Error: err.Error()})
 	}
+	step("dynamodb")
 
 	// ElastiCache - fetch and enrich with VPC info
 	if data, err := awscli.Run("elasticache", "describe-cache-clusters", "--show-cache-node-info", "--region", region); err == nil {
@@ -104,6 +112,7 @@ func SyncDatabaseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "elasticache", Error: err.Error()})
 	}
+	step("elasticache")
 
 	return results, nil
 }

@@ -19,7 +19,8 @@ type S3Bucket struct {
 	Versioning        string          `json:"Versioning"`        // "Enabled", "Suspended", "Disabled"
 	PublicAccessBlock *S3PublicBlock  `json:"PublicAccessBlock"`
 	PolicyPublic      bool            `json:"PolicyPublic"`
-	ACLPublic         bool            `json:"ACLPublic"`
+	ACLPublic         bool             `json:"ACLPublic"`
+	Policies          []ResourcePolicy `json:"Policies"`
 }
 
 type S3PublicBlock struct {
@@ -70,11 +71,17 @@ func parseS3Bucket(raw json.RawMessage) S3Bucket {
 }
 
 // SyncS3WithRegions syncs bucket list then fetches per-bucket details.
-func SyncS3WithRegions() (*SyncResult, error) {
+func SyncS3WithRegions(onStep ...func(string)) (*SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	result, err := syncS3()
 	if err != nil {
 		return nil, err
 	}
+	step("s3 buckets")
 
 	s3Data, _ := LoadS3Data()
 	for i, bucket := range s3Data.Buckets {
@@ -130,6 +137,15 @@ func SyncS3WithRegions() (*SyncResult, error) {
 			}
 		}
 
+		// Bucket policy
+		if polData, err := awscli.Run("s3api", "get-bucket-policy", "--bucket", bucket.Name); err == nil {
+			var polResp struct {
+				Policy string `json:"Policy"`
+			}
+			json.Unmarshal(polData, &polResp)
+			s3Data.Buckets[i].Policies = ParseResourcePolicies(polResp.Policy)
+		}
+
 		// Versioning
 		if verData, err := awscli.Run("s3api", "get-bucket-versioning", "--bucket", bucket.Name); err == nil {
 			var ver struct {
@@ -145,6 +161,7 @@ func SyncS3WithRegions() (*SyncResult, error) {
 
 		// Determine overall access
 		s3Data.Buckets[i].Access = determineAccess(s3Data.Buckets[i])
+		step("s3:" + bucket.Name)
 	}
 
 	enriched, _ := json.Marshal(s3Data)

@@ -1,5 +1,183 @@
 {{define "ai-panel"}}
 <div id="ai-content">
-  <div class="empty-state">AI & Machine Learning resources coming soon.</div>
+  {{template "ai-content" .}}
 </div>
+{{end}}
+
+{{define "ai-content"}}
+{{if not (hasAIData .AI)}}
+  <div class="empty-state">No AI & ML resources cached. Click the refresh button to sync from AWS.</div>
+{{else}}
+  {{if .AI.SageMakerNotebooks}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">SageMaker Notebooks</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .AI.SageMakerNotebooks}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .AI.SageMakerNotebooks}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/sagemaker-notebook/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-sm">SM</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          <span class="tag">{{.InstanceType}}</span>
+          <span class="resource-name">{{.Name}}</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">{{.VolumeSizeGB}} GB · {{.DirectInternetAccess}} · created {{.CreationTime}}</span>
+            </div>
+          </div>
+          {{if .RoleName}}
+          <div class="nested-section-label">IAM Role</div>
+          <div class="resource-row clickable" hx-get="/detail/iam-role/{{.RoleName}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-role">ROLE</span>
+            <span class="resource-name">{{.RoleName}}</span>
+          </div>
+          {{end}}
+          {{if .SubnetId}}
+          <div class="nested-section-label">Subnet</div>
+          <div class="resource-row clickable" hx-get="/detail/subnet/{{.SubnetId}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sub">SUB</span>
+            <span class="resource-name">{{.SubnetId}}</span>
+          </div>
+          {{end}}
+          {{if .SecurityGroups}}
+          <div class="nested-section-label">Security Groups</div>
+          {{range .SecurityGroups}}
+          <div class="resource-row clickable" hx-get="/detail/sg/{{.}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+            <span class="resource-icon resource-icon-sg">SG</span>
+            <span class="resource-name">{{.}}</span>
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .AI.SageMakerEndpoints}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">SageMaker Endpoints</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .AI.SageMakerEndpoints}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .AI.SageMakerEndpoints}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/sagemaker-endpoint/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-sm">EP</span>
+          <span class="tag tag-{{.Status}}">{{.Status}}</span>
+          <span class="resource-name">{{.Name}}</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">{{if .ModelName}}model: {{.ModelName}} · {{end}}{{if .InstanceType}}{{.InstanceType}} x{{.InstanceCount}} · {{end}}created {{.CreationTime}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .AI.SageMakerModels}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">SageMaker Models</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .AI.SageMakerModels}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .AI.SageMakerModels}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header clickable" hx-get="/detail/sagemaker-model/{{.Name}}?region={{$.Region}}" hx-target="#detail-container" hx-swap="innerHTML">
+          <span class="resource-icon resource-icon-sm">MDL</span>
+          <span class="resource-name">{{.Name}}</span>
+          <span class="resource-detail">created {{.CreationTime}}</span>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .AI.BedrockCustom}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">Bedrock Custom Models</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .AI.BedrockCustom}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range .AI.BedrockCustom}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header">
+          <span class="resource-icon resource-icon-br">BR</span>
+          <span class="resource-name">{{.ModelName}}</span>
+        </div>
+        <div class="rt-subnets">
+          <div class="endpoint-info">
+            <div class="endpoint-row">
+              <span class="resource-detail">base: {{.BaseModelId}} · created {{.CreationTime}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .AI.BedrockModels}}
+  <div class="vpc-card">
+    <div class="vpc-header">
+      <div class="vpc-title">
+        <span class="vpc-name">Bedrock Foundation Models</span>
+      </div>
+      <div class="vpc-meta">
+        <span class="count-badge">{{len .AI.BedrockModels}}</span>
+      </div>
+    </div>
+    <div class="vpc-body">
+      {{range groupBedrockByProvider .AI.BedrockModels}}
+      <div class="vpc-section rt-section">
+        <div class="rt-header">
+          <span class="resource-icon resource-icon-br">BR</span>
+          <span class="resource-name">{{.Provider}}</span>
+          <span class="count-badge">{{len .Models}}</span>
+        </div>
+        <div class="rt-subnets">
+          {{range .Models}}
+          <div class="resource-row">
+            <span class="resource-name">{{.ModelName}}</span>
+            <span class="resource-detail">{{.ModelId}}</span>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+{{end}}
 {{end}}

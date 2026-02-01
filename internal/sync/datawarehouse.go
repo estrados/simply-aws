@@ -49,13 +49,19 @@ type GlueDatabase struct {
 	CatalogId    string `json:"CatalogId"`
 }
 
-func SyncDataWarehouseData(region string) ([]SyncResult, error) {
+func SyncDataWarehouseData(region string, onStep ...func(string)) ([]SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	var results []SyncResult
 
 	// Also sync security groups so SG detail links work from this tab
 	if data, err := awscli.Run("ec2", "describe-security-groups", "--region", region); err == nil {
 		WriteCache(region+":security-groups", data)
 	}
+	step("security groups")
 
 	// Redshift
 	if data, err := awscli.Run("redshift", "describe-clusters", "--region", region); err == nil {
@@ -64,6 +70,7 @@ func SyncDataWarehouseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "redshift", Error: err.Error()})
 	}
+	step("redshift")
 
 	// Athena - list workgroups then get details
 	if data, err := awscli.Run("athena", "list-work-groups", "--region", region); err == nil {
@@ -82,6 +89,7 @@ func SyncDataWarehouseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "athena", Error: err.Error()})
 	}
+	step("athena")
 
 	// Glue databases
 	if data, err := awscli.Run("glue", "get-databases", "--region", region); err == nil {
@@ -100,6 +108,7 @@ func SyncDataWarehouseData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "glue", Error: err.Error()})
 	}
+	step("glue")
 
 	return results, nil
 }

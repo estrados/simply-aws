@@ -35,7 +35,12 @@ type IAMGroup struct {
 	Members          []string `json:"Members"`
 }
 
-func SyncIAMData() ([]SyncResult, error) {
+func SyncIAMData(onStep ...func(string)) ([]SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	var results []SyncResult
 	data := &IAMData{}
 
@@ -104,6 +109,7 @@ func SyncIAMData() ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "iam-roles", Error: err.Error()})
 	}
+	step("iam roles")
 
 	// Sync groups
 	if raw, err := awscli.Run("iam", "list-groups"); err == nil {
@@ -167,6 +173,7 @@ func SyncIAMData() ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "iam-groups", Error: err.Error()})
 	}
+	step("iam groups")
 
 	// Cache enriched data
 	enriched, _ := json.Marshal(data)

@@ -428,6 +428,7 @@ main {
 .resource-icon-alb       { background: #7c3aed; }
 .resource-icon-nlb       { background: #6d28d9; }
 .resource-icon-tg        { background: #a78bfa; }
+.resource-icon-ebs       { background: #64748b; }
 .resource-icon-role      { background: #8b5cf6; }
 .resource-icon-grp       { background: #14b8a6; }
 .resource-icon-principal { background: #f59e0b; }
@@ -435,6 +436,8 @@ main {
 .resource-icon-sns       { background: #e11d48; }
 .resource-icon-kinesis   { background: #0ea5e9; }
 .resource-icon-eb        { background: #e85d04; }
+.resource-icon-sm        { background: #06b6d4; }
+.resource-icon-br        { background: #8b5cf6; }
 
 .resource-name {
   font-weight: 500;

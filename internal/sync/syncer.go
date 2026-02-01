@@ -13,7 +13,12 @@ type SyncResult struct {
 }
 
 // SyncVPCData fetches all VPC-related resources for a region and caches them.
-func SyncVPCData(region string) ([]SyncResult, error) {
+func SyncVPCData(region string, onStep ...func(string)) ([]SyncResult, error) {
+	step := func(label string) {
+		if len(onStep) > 0 && onStep[0] != nil {
+			onStep[0](label)
+		}
+	}
 	jobs := []struct {
 		name      string
 		args      []string
@@ -31,6 +36,7 @@ func SyncVPCData(region string) ([]SyncResult, error) {
 	for _, job := range jobs {
 		key := region + ":" + job.name
 		data, err := awscli.Run(job.args...)
+		step(job.name)
 		if err != nil {
 			results = append(results, SyncResult{Service: job.name, Error: err.Error()})
 			continue
@@ -55,6 +61,7 @@ func SyncVPCData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "load-balancers", Error: err.Error()})
 	}
+	step("load balancers")
 
 	// ELBv2 - Target Groups
 	if data, err := awscli.Run("elbv2", "describe-target-groups", "--region", region); err == nil {
@@ -72,6 +79,7 @@ func SyncVPCData(region string) ([]SyncResult, error) {
 	} else {
 		results = append(results, SyncResult{Service: "target-groups", Error: err.Error()})
 	}
+	step("target groups")
 
 	return results, nil
 }
