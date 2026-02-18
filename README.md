@@ -1,8 +1,14 @@
-# saws
+# saws : simply aws
 
 **Your entire AWS infrastructure, one page, offline-ready.**
 
-<!-- ![saws demo](docs/demo.gif) -->
+### Web Dashboard
+
+![saws web dashboard](docs/saws-web.gif)
+
+### CLI View
+
+![saws cli view](docs/saws-cli.gif)
 
 ## The Problem
 
@@ -17,6 +23,8 @@ You're an engineer or architect responsible for AWS infrastructure across multip
 - Even the region selector works against you. The console shows all 30+ regions, you can't hide the ones you don't use, and every service page defaults to whatever region you're in. You're constantly double-checking "wait, am I looking at the right region?"
 
 The console has every bell and whistle — it has to. But when you just need to see your infrastructure and understand how it connects, all that complexity gets in the way.
+
+**It's not just for infrastructure engineers.** Even if you're a backend dev, a team lead, or new to AWS — `saws` lowers the barrier. It makes you more aware of what's actually running, easier to review after every infrastructure change, and faster to spot what shifted between deploys. You don't need to be an AWS expert to understand your own account.
 
 ## The Solution
 
@@ -38,6 +46,7 @@ saws up
 - **Multi-region** — enable only the regions you use, hide the rest. No more scrolling through 30+ regions you'll never touch
 - **Async sync with live progress** — non-blocking, shows what's syncing in real-time
 - **Offline after first sync** — all data cached in local SQLite, no internet needed to browse
+- **CLI view & sync** — `saws view` for terminal UI, `saws sync` to pull data without a browser
 - **Single binary** — no Docker, no Node.js, no cloud dependencies beyond AWS CLI
 
 ### Resource Coverage
@@ -77,12 +86,22 @@ saws up
 ## Usage
 
 ```bash
-# Start the dashboard (default port 3131)
+# Start the web dashboard (default port 3131)
 saws up
 
 # Custom port
 saws up --port 8080
+
+# Sync from the terminal
+saws sync
+saws sync --region us-west-2
+
+# Interactive CLI view (no browser needed)
+saws view
+saws view --region ap-southeast-1
 ```
+
+### Web Dashboard
 
 Open [http://localhost:3131](http://localhost:3131), hit sync, and you're set.
 
@@ -91,18 +110,27 @@ Open [http://localhost:3131](http://localhost:3131), hit sync, and you're set.
 3. **Switch regions** — use the dropdown to jump between regions
 4. **Work offline** — close your VPN, disconnect WiFi — your data is cached locally
 
+### CLI View
+
+Run `saws view` for an interactive terminal UI — pick a tab (1-7) to see resources, option 0 to switch region. Reads from the same SQLite cache as the web dashboard.
+
 ## How It Works
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Browser │────>│  saws    │────>│ AWS CLI  │
-│  (HTMX)  │<────│  (Go)    │<────│  (sync)  │
-└──────────┘     └────┬─────┘     └──────────┘
-                      │
-                 ┌────┴─────┐
-                 │  SQLite  │
-                 │  (.saws/)│
-                 └──────────┘
+┌────────────┐   ┌────────────┐   ┌────────────┐
+│   Browser  │──>│            │──>│  AWS CLI   │
+│   (HTMX)   │<──│    saws    │<──│   (sync)   │
+└────────────┘   │    (Go)    │   └────────────┘
+                 │            │
+┌────────────┐   │            │
+│  Terminal  │──>│            │
+│ (view/sync)│<──│            │
+└────────────┘   └─────┬──────┘
+                       │
+                 ┌─────┴──────┐
+                 │   SQLite   │
+                 │   (.saws/) │
+                 └────────────┘
 ```
 
 1. **Sync** — `saws` calls AWS CLI commands, parses the JSON, enriches it (resolves IAM roles, links resources), and stores it in SQLite
@@ -134,6 +162,7 @@ go test ./...
 cmd/saws/           CLI entrypoint (cobra)
 internal/
   awscli/           AWS CLI detection and subprocess execution
+  cli/              Terminal UI (view, sync commands)
   server/           HTTP handlers, template rendering, routing
   sync/             Data models, AWS sync, SQLite cache, progress tracking
   cfn/              CloudFormation template parsing
